@@ -347,4 +347,44 @@ body {
   .data-table td {
     padding: 8px;
   }
+
+  .form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #282c34;
+  font-weight: 500;
+}
+
+.account-info {
+  padding: 15px;
+  background-color: #e3f2fd;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  font-family: monospace;
+  font-size: 14px;
+  color: #1565c0;
+}
+
+.account-info div {
+  margin-bottom: 5px;
+}
+
+.account-info div:last-child {
+  margin-bottom: 0;
+}
+
+select.form-input-full {
+  cursor: pointer;
+  background-color: white;
+}
+
+select.form-input-full:focus {
+  outline: none;
+  border-color: #61dafb;
+  box-shadow: 0 0 0 2px rgba(97, 218, 251, 0.2);
+}
 }
