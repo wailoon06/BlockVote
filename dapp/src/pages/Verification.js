@@ -1,20 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import VoterRegisterContract from "../Voter_Register.json";
 
-export default function Verify({ walletAddress }) {
+export default function Verify() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const walletAddress = location.state?.walletAddress || '';
+
   const [loading, setLoading] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
   const [voterInfo, setVoterInfo] = useState(null);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
-  const [icPhoto, setIcPhoto] = useState(null);
+  const [icFrontPhoto, setIcFrontPhoto] = useState(null);
+  const [icBackPhoto, setIcBackPhoto] = useState(null);
   const [selfiePhoto, setSelfiePhoto] = useState(null);
-  const [icPreview, setIcPreview] = useState('');
+  const [icFrontPreview, setIcFrontPreview] = useState('');
+  const [icBackPreview, setIcBackPreview] = useState('');
   const [selfiePreview, setSelfiePreview] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [verificationAttempts, setVerificationAttempts] = useState(0);
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (walletAddress) {
@@ -23,6 +28,8 @@ export default function Verify({ walletAddress }) {
       setMessage('Please connect your wallet first');
       setMessageType('danger');
       setCheckingStatus(false);
+      // Redirect to home after 2 seconds
+      setTimeout(() => navigate('/'), 2000);
     }
   }, [walletAddress]);
 
@@ -85,8 +92,15 @@ export default function Verify({ walletAddress }) {
     setCheckingStatus(false);
   };
 
+  const logout = () => {
+    // Clear state and redirect to home (without wallet address state)
+    navigate('/', { replace: true });
+  };
+
   const handleIcPhotoChange = (e) => {
     const file = e.target.files[0];
+    const inputName = e.target.name;
+    
     if (file) {
       // Validate file type
       if (!file.type.startsWith('image/')) {
@@ -102,10 +116,15 @@ export default function Verify({ walletAddress }) {
         return;
       }
 
-      setIcPhoto(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        setIcPreview(reader.result);
+        if (inputName === 'icFront') {
+          setIcFrontPhoto(file);
+          setIcFrontPreview(reader.result);
+        } else if (inputName === 'icBack') {
+          setIcBackPhoto(file);
+          setIcBackPreview(reader.result);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -140,8 +159,8 @@ export default function Verify({ walletAddress }) {
   const handleSubmitVerification = async (e) => {
     e.preventDefault();
     
-    if (!icPhoto || !selfiePhoto) {
-      setMessage('Please upload both IC photo and selfie');
+    if (!icFrontPhoto || !icBackPhoto || !selfiePhoto) {
+      setMessage('Please upload IC front, IC back, and selfie photos');
       setMessageType('danger');
       return;
     }
@@ -151,78 +170,76 @@ export default function Verify({ walletAddress }) {
     setMessageType('info');
 
     try {
-      // Create FormData to send to backend
-      const formData = new FormData();
-      formData.append('walletAddress', walletAddress);
-      formData.append('icPhoto', icPhoto);
-      formData.append('selfie', selfiePhoto);
+      // Step 1: Verify IC number from front and back images
+      const icFormData = new FormData();
+      icFormData.append('front', icFrontPhoto);
+      icFormData.append('back', icBackPhoto);
+      icFormData.append('selfie_image', selfiePhoto);
 
-      // Send to backend for verification
-      const response = await fetch('http://localhost:5000/api/verify-identity', {
+      setMessage('Extracting IC information...');
+      const icResponse = await fetch('http://localhost:5000/verify', {
         method: 'POST',
-        body: formData
+        body: icFormData
       });
 
-      const result = await response.json();
+      const result = await icResponse.json();
 
-      if (response.ok && result.verified) {
-        // Verification successful - update blockchain
-        setMessage('Identity verified! Updating blockchain...');
-        setMessageType('info');
-
-        // Get verification code from backend
-        const verificationCode = result.verificationCode;
-
-        // Update status on blockchain
-        const Web3 = (await import('web3')).default;
-        const web3 = new Web3(window.ethereum);
-        
-        const deployedNetwork = VoterRegisterContract.networks[5777];
-        const contract = new web3.eth.Contract(
-          VoterRegisterContract.abi,
-          deployedNetwork.address
-        );
-
-        await contract.methods
-          .verifyVoter(verificationCode)
-          .send({ from: walletAddress });
-
-        setMessage('Verification successful! Your account has been verified.');
-        setMessageType('success');
-        
-        // Refresh voter info
-        setTimeout(() => {
-          checkVoterStatus();
-        }, 2000);
-
-      } else {
-        // Verification failed
-        setVerificationAttempts(prev => prev + 1);
-        
-        const errorMsg = result.message || 'Identity verification failed. Please ensure your photos are clear and match your registration details.';
-        setMessage(errorMsg);
-        setMessageType('danger');
-
-        // Clear photos for retry
-        setIcPhoto(null);
-        setSelfiePhoto(null);
-        setIcPreview('');
-        setSelfiePreview('');
+      if (!icResponse.ok || !result.ic_verified) {
+        throw new Error(result.feedback || result.message || result.error || 'IC verification failed. Please ensure your IC photos are clear and readable.');
       }
+
+      // Step 3: Update blockchain if both verifications passed
+      setMessage('Identity verified! Updating blockchain...');
+      setMessageType('info');
+
+      const Web3 = (await import('web3')).default;
+      const web3 = new Web3(window.ethereum);
+      
+      const deployedNetwork = VoterRegisterContract.networks[5777];
+      const contract = new web3.eth.Contract(
+        VoterRegisterContract.abi,
+        deployedNetwork.address
+      );
+
+      // Get voter info to get the verification code
+      const voterData = await contract.methods.voters(walletAddress).call();
+      const verificationCode = voterData.verificationCode;
+
+      await contract.methods
+        .verifyVoter(verificationCode)
+        .send({ from: walletAddress });
+
+      setMessage('Verification successful! Your account has been verified.');
+      setMessageType('success');
+      
+      // Refresh voter info
+      setTimeout(() => {
+        checkVoterStatus();
+      }, 2000);
 
     } catch (error) {
       console.error('Verification error:', error);
       
       let errorMsg = 'Verification failed. ';
       if (error.message.includes('Failed to fetch')) {
-        errorMsg += 'Cannot connect to verification server. Please try again later.';
-      } else {
-        errorMsg += error.message;
+        errorMsg += 'Cannot connect to verification server. Please ensure the Flask server is running on http://localhost:5000';
+      } else if (error.message) {
+        errorMsg = error.message;
       }
       
       setMessage(errorMsg);
       setMessageType('danger');
       setVerificationAttempts(prev => prev + 1);
+
+      // Clear photos for retry on face mismatch or IC verification failure
+      if (error.message.includes('Face verification failed') || error.message.includes('IC verification failed')) {
+        setIcFrontPhoto(null);
+        setIcBackPhoto(null);
+        setSelfiePhoto(null);
+        setIcFrontPreview('');
+        setIcBackPreview('');
+        setSelfiePreview('');
+      }
     }
 
     setVerifying(false);
@@ -340,11 +357,27 @@ export default function Verify({ walletAddress }) {
           alignItems: 'center'
         }}>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-            VoteChain - Identity Verification
+            BlockVote - Identity Verification
           </div>
-          <span style={{ fontFamily: 'monospace' }}>
-            {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <span style={{ fontFamily: 'monospace' }}>
+              {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}
+            </span>
+            <button 
+              onClick={logout}
+              style={{
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '0.25rem',
+                cursor: 'pointer',
+                fontWeight: '500'
+              }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -453,13 +486,14 @@ export default function Verify({ walletAddress }) {
           )}
 
           <form onSubmit={handleSubmitVerification}>
-            {/* IC Photo Upload */}
+            {/* IC Front Photo Upload */}
             <div style={{ marginBottom: '2rem' }}>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-                IC Photo *
+                IC Front Photo *
               </label>
               <input
                 type="file"
+                name="icFront"
                 accept="image/*"
                 onChange={handleIcPhotoChange}
                 required
@@ -472,14 +506,53 @@ export default function Verify({ walletAddress }) {
                 }}
               />
               <small style={{ color: '#6c757d', fontSize: '0.875rem' }}>
-                Upload a clear photo of your IC (front side only, max 5MB)
+                Upload a clear photo of your IC front side (max 5MB)
               </small>
               
-              {icPreview && (
+              {icFrontPreview && (
                 <div style={{ marginTop: '1rem', textAlign: 'center' }}>
                   <img 
-                    src={icPreview} 
-                    alt="IC Preview" 
+                    src={icFrontPreview} 
+                    alt="IC Front Preview" 
+                    style={{ 
+                      maxWidth: '100%', 
+                      maxHeight: '300px',
+                      border: '2px solid #dee2e6',
+                      borderRadius: '0.25rem'
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* IC Back Photo Upload */}
+            <div style={{ marginBottom: '2rem' }}>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
+                IC Back Photo *
+              </label>
+              <input
+                type="file"
+                name="icBack"
+                accept="image/*"
+                onChange={handleIcPhotoChange}
+                required
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #ced4da',
+                  borderRadius: '0.25rem',
+                  fontSize: '1rem'
+                }}
+              />
+              <small style={{ color: '#6c757d', fontSize: '0.875rem' }}>
+                Upload a clear photo of your IC back side (max 5MB)
+              </small>
+              
+              {icBackPreview && (
+                <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+                  <img 
+                    src={icBackPreview} 
+                    alt="IC Back Preview" 
                     style={{ 
                       maxWidth: '100%', 
                       maxHeight: '300px',
@@ -539,25 +612,26 @@ export default function Verify({ walletAddress }) {
               <strong style={{ display: 'block', marginBottom: '0.5rem' }}>Guidelines:</strong>
               <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
                 <li>Ensure photos are clear and well-lit</li>
-                <li>IC details must be readable</li>
+                <li>IC details must be readable on both front and back</li>
                 <li>Face must be clearly visible in selfie</li>
                 <li>No filters or edits applied</li>
+                <li>Photos should be taken straight-on (not at an angle)</li>
               </ul>
             </div>
 
             {/* Submit Button */}
             <button 
               type="submit"
-              disabled={verifying || !icPhoto || !selfiePhoto}
+              disabled={verifying || !icFrontPhoto || !icBackPhoto || !selfiePhoto}
               style={{
                 width: '100%',
                 padding: '0.75rem',
-                backgroundColor: (verifying || !icPhoto || !selfiePhoto) ? '#6c757d' : '#0d6efd',
+                backgroundColor: (verifying || !icFrontPhoto || !icBackPhoto || !selfiePhoto) ? '#6c757d' : '#0d6efd',
                 color: 'white',
                 border: 'none',
                 borderRadius: '0.25rem',
                 fontSize: '1rem',
-                cursor: (verifying || !icPhoto || !selfiePhoto) ? 'not-allowed' : 'pointer',
+                cursor: (verifying || !icFrontPhoto || !icBackPhoto || !selfiePhoto) ? 'not-allowed' : 'pointer',
                 fontWeight: '500'
               }}
             >

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import VoterRegisterContract from "../Voter_Register.json";
 
 export default function Register() {
   const location = useLocation();
+  const navigate = useNavigate();
   const walletAddress = location.state?.walletAddress || '';
 
   const [formData, setFormData] = useState({
@@ -14,13 +15,63 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
+  const [checking, setChecking] = useState(true);
   
   useEffect(() => {
     if (!walletAddress) {
       setMessage('Please connect your wallet first');
       setMessageType('danger');
+      setChecking(false);
+      // Redirect to home after 2 seconds
+      setTimeout(() => navigate('/'), 2000);
+    } else {
+      checkVoterStatus();
     }
   }, [walletAddress]);
+
+  const checkVoterStatus = async () => {
+    try {
+      if (typeof window.ethereum === 'undefined') {
+        throw new Error('MetaMask not found');
+      }
+
+      const Web3 = (await import('web3')).default;
+      const web3 = new Web3(window.ethereum);
+      
+      const deployedNetwork = VoterRegisterContract.networks[5777];
+      if (!deployedNetwork) {
+        throw new Error('Contract not deployed on this network!');
+      }
+
+      const contract = new web3.eth.Contract(
+        VoterRegisterContract.abi,
+        deployedNetwork.address
+      );
+
+      // Check if wallet is already registered
+      const isRegistered = await contract.methods
+        .isWalletRegistered(walletAddress)
+        .call();
+
+      if (isRegistered) {
+        // Get voter info to check status
+        const voterInfo = await contract.methods.getVoterInfo(walletAddress).call();
+        
+        if (voterInfo.status === 'PENDING_VERIFICATION') {
+          // Redirect to verification page
+          navigate('/verify', { state: { walletAddress } });
+        } else if (voterInfo.status === 'VERIFIED') {
+          // Redirect to home page
+          navigate('/', { state: { message: 'You are already registered and verified!' } });
+        }
+      }
+      
+      setChecking(false);
+    } catch (error) {
+      console.error('Error checking voter status:', error);
+      setChecking(false);
+    }
+  };
 
   const handleInputChange = (e) => {
     setFormData({
@@ -29,13 +80,23 @@ export default function Register() {
     });
   };
 
+  const logout = () => {
+    // Clear state and redirect to home (without wallet address state)
+    navigate('/', { replace: true });
+  };
+
   const handleRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
 
     try {
-        // Check if MetaMask is available
+      // Check if wallet is connected
+      if (!walletAddress) {
+        throw new Error('Please connect your wallet first');
+      }
+
+      // Check if MetaMask is available
       if (typeof window.ethereum === 'undefined') {
         throw new Error('MetaMask not found');
       }
@@ -55,25 +116,21 @@ export default function Register() {
         deployedNetwork.address
       );
 
-      // Check if wallet is already registered
-      const isRegistered = await contract.methods
-        .isWalletRegistered(walletAddress)
-        .call();
-
-      if (isRegistered) {
-        throw new Error('Wallet address already registered');
-      }
-
       // Register voter - sends IC hash, not plaintext
       const result = await contract.methods
         .registerVoter(formData.name, formData.ic, formData.email)
         .send({ from: walletAddress });
 
-      setMessage('Registration successful! Please check your email for verification code.');
+      setMessage('Registration successful! Redirecting to verification...');
       setMessageType('success');
       
       // Clear form
       setFormData({ name: '', ic: '', email: '' });
+      
+      // Redirect to verification page after successful registration
+      setTimeout(() => {
+        navigate('/verify', { state: { walletAddress } });
+      }, 2000);
     } catch (error) {
       let errorMsg = 'Registration failed';
       
@@ -94,9 +151,61 @@ export default function Register() {
     setLoading(false);
   };
 
+  if (checking) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Checking registration status...</div>
+        </div>
+      </div>
+    );
+  }
+
+  
   
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+      {/* Navigation */}
+      <nav style={{ 
+        backgroundColor: '#0d6efd', 
+        padding: '1rem 0',
+        color: 'white'
+      }}>
+        <div style={{ 
+          maxWidth: '1200px', 
+          margin: '0 auto', 
+          padding: '0 1rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+            VoteChain - Registration
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <span style={{ fontFamily: 'monospace' }}>
+              {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}
+            </span>
+            <button 
+              onClick={logout}
+              style={{
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                padding: '0.5rem 1rem',
+                borderRadius: '0.25rem',
+                cursor: 'pointer',
+                fontWeight: '500'
+              }}
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <div style={{ maxWidth: '600px', margin: '3rem auto', padding: '0 1rem' }}>
       <div style={{
         backgroundColor: 'white',
         borderRadius: '0.5rem',
@@ -236,6 +345,7 @@ export default function Register() {
         >
           {loading ? 'Registering...' : !walletAddress ? 'Connect Wallet First' : 'Register'}
         </button>
+      </div>
       </div>
     </div>
   );

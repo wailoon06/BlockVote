@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import VoterRegisterContract from "../Voter_Register.json";
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState('');
@@ -47,6 +48,56 @@ export default function Home() {
     setIsConnected(false);
   };
 
+  // Check voter status and navigate accordingly
+  const checkVoterStatusAndNavigate = async (address) => {
+    try {
+      if (typeof window.ethereum === 'undefined') {
+        throw new Error('MetaMask not found');
+      }
+
+      const Web3 = (await import('web3')).default;
+      const web3 = new Web3(window.ethereum);
+      
+      const deployedNetwork = VoterRegisterContract.networks[5777];
+      if (!deployedNetwork) {
+        throw new Error('Contract not deployed on this network!');
+      }
+
+      const contract = new web3.eth.Contract(
+        VoterRegisterContract.abi,
+        deployedNetwork.address
+      );
+
+      // Check if wallet is registered
+      const isRegistered = await contract.methods
+        .isWalletRegistered(address)
+        .call();
+
+      if (!isRegistered) {
+        // Not registered - go to register page
+        navigate('/register', { state: { walletAddress: address } });
+      } else {
+        // Registered - check status
+        const voterInfo = await contract.methods.getVoterInfo(address).call();
+        
+        if (voterInfo.status === 'PENDING_VERIFICATION') {
+          // Pending verification - go to verification page
+          navigate('/verify', { state: { walletAddress: address } });
+        } else if (voterInfo.status === 'VERIFIED') {
+          // Already verified - stay on home page or go to voting page
+          setMessage('Welcome back! You are already verified.');
+          setMessageType('success');
+          // Optionally navigate to a voting/dashboard page
+          // navigate('/dashboard', { state: { walletAddress: address } });
+        }
+      }
+    } catch (error) {
+      console.error('Error checking voter status:', error);
+      setMessage('Failed to check voter status: ' + error.message);
+      setMessageType('danger');
+    }
+  };
+
   const connectWallet = async () => {
     try {
       if (typeof window.ethereum !== 'undefined') {
@@ -67,8 +118,12 @@ export default function Home() {
               }]
             });
           } catch (permError) {
-            // If user cancels, just continue with eth_requestAccounts
-            if (permError.code !== 4001) {
+            // If user cancels, stop the connection process
+            if (permError.code === 4001) {
+              setMessage('Connection cancelled. Please try again.');
+              setMessageType('danger');
+              return; // Exit the function
+            } else {
               console.log('Permission request failed:', permError);
             }
           }
@@ -85,11 +140,8 @@ export default function Home() {
           setMessage('Wallet connected successfully!');
           setMessageType('success');
           
-          
-          // Navigate to register page with wallet address
-          setTimeout(() => {
-            navigate('/register', { state: { walletAddress: accounts[0] } });
-          }, 1000);
+          // Check voter status and navigate accordingly
+          await checkVoterStatusAndNavigate(accounts[0]);
         }
       } else {
         setMessage('Please install MetaMask!');
@@ -103,6 +155,19 @@ export default function Home() {
       }
       setMessageType('danger');
     }
+  };
+
+  const logout = () => {
+    // Clear wallet connection state
+    setWalletAddress('');
+    setIsConnected(false);
+    setMessage('Wallet disconnected successfully!');
+    setMessageType('success');
+    
+    // Clear message after 3 seconds
+    setTimeout(() => {
+      setMessage('');
+    }, 3000);
   };
 
   return (
@@ -122,7 +187,7 @@ export default function Home() {
           alignItems: 'center'
         }}>
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-            VoteChain
+            BlockVote
           </div>
           <div>
             {!isConnected ? (
@@ -141,9 +206,25 @@ export default function Home() {
                 Connect Wallet
               </button>
             ) : (
-              <span style={{ color: 'white' }}>
-                {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <span style={{ color: 'white' }}>
+                  {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}
+                </span>
+                <button 
+                  onClick={logout}
+                  style={{
+                    backgroundColor: '#dc3545',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '0.25rem',
+                    cursor: 'pointer',
+                    fontWeight: '500'
+                  }}
+                >
+                  Logout
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -153,13 +234,8 @@ export default function Home() {
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '3rem 1rem' }}>
         <div style={{ textAlign: 'center', maxWidth: '800px', margin: '0 auto' }}>
           <h1 style={{ fontSize: '3rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>
-            Welcome to Blockchain Voting
+            Welcome to BlockVote
           </h1>
-          <p style={{ fontSize: '1.25rem', marginBottom: '2rem', color: '#6c757d' }}>
-            Secure, transparent, and decentralized voting platform powered by blockchain technology.
-            Democracy reimagined for the digital age.
-          </p>
-
           {message && (
             <div style={{
               backgroundColor: messageType === 'success' ? '#d1e7dd' : '#f8d7da',
@@ -198,7 +274,7 @@ export default function Home() {
             padding: '3rem',
             marginTop: '3rem'
           }}>
-            <h3 style={{ marginBottom: '1.5rem' }}>Random Words in the Middle</h3>
+            <h3 style={{ marginBottom: '1.5rem' }}>BlockVote</h3>
             <p style={{ color: '#6c757d', lineHeight: '1.8' }}>
               Innovation transparency immutable consensus distributed ledger cryptography 
               decentralization smart contracts verification authenticity reliability 

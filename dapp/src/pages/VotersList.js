@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import VoterRegisterContract from "../Voter_Register.json";
 
 export default function VotersList() {
+  const navigate = useNavigate();
   const [voters, setVoters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -12,6 +14,11 @@ export default function VotersList() {
   useEffect(() => {
     loadVoters();
   }, []);
+
+  const goHome = () => {
+    // Clear state and redirect to home
+    navigate('/', { replace: true });
+  };
 
   const loadVoters = async () => {
     setLoading(true);
@@ -120,6 +127,20 @@ export default function VotersList() {
           <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
             VoteChain - Registered Voters
           </div>
+          <button 
+            onClick={goHome}
+            style={{
+              backgroundColor: 'white',
+              color: '#0d6efd',
+              border: 'none',
+              padding: '0.5rem 1rem',
+              borderRadius: '0.25rem',
+              cursor: 'pointer',
+              fontWeight: '500'
+            }}
+          >
+            Back to Home
+          </button>
         </div>
       </nav>
 
