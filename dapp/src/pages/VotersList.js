@@ -34,7 +34,16 @@ export default function VotersList() {
       const Web3 = (await import('web3')).default;
       const web3 = new Web3(window.ethereum);
       
-      const deployedNetwork = VoterRegisterContract.networks[5777];
+      const chainId = await web3.eth.getChainId();
+      const networkId = await web3.eth.net.getId();
+      const possibleIds = [chainId, networkId, 5777, 1337];
+      let deployedNetwork = null;
+      for (const id of possibleIds) {
+        if (VoterRegisterContract.networks[id]) {
+          deployedNetwork = VoterRegisterContract.networks[id];
+          break;
+        }
+      }
       if (!deployedNetwork) {
         throw new Error('Contract not deployed on this network!');
       }

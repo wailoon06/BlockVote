@@ -58,15 +58,35 @@ export default function Home() {
       const Web3 = (await import('web3')).default;
       const web3 = new Web3(window.ethereum);
       
-      const deployedNetwork = VoterRegisterContract.networks[5777];
+      // Try to find deployed contract - check both chain ID and common network IDs
+      const chainId = await web3.eth.getChainId();
+      const networkId = await web3.eth.net.getId();
+      
+      // Try chain ID first, then network ID, then common IDs
+      const possibleIds = [chainId, networkId, 5777, 1337];
+      let deployedNetwork = null;
+      
+      for (const id of possibleIds) {
+        if (VoterRegisterContract.networks[id]) {
+          deployedNetwork = VoterRegisterContract.networks[id];
+          break;
+        }
+      }
+      
       if (!deployedNetwork) {
-        throw new Error('Contract not deployed on this network!');
+        throw new Error(`Contract not deployed! Chain ID: ${chainId}, Network ID: ${networkId}. Make sure Ganache is running and contract is deployed.`);
       }
 
       const contract = new web3.eth.Contract(
         VoterRegisterContract.abi,
         deployedNetwork.address
       );
+
+      // Verify contract exists at this address
+      const code = await web3.eth.getCode(deployedNetwork.address);
+      if (code === '0x' || code === '0x0') {
+        throw new Error(`No contract found at address ${deployedNetwork.address}. Please re-deploy the contract with 'truffle migrate --reset'.`);
+      }
 
       // Check if wallet is registered
       const isRegistered = await contract.methods

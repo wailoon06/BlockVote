@@ -20,7 +20,7 @@ contract Voter_Register {
     
     // Array to store all registered addresses
     address[] private registeredAddresses;
-    
+        
     event VoterRegistered(
         address indexed wallet,
         string name,
