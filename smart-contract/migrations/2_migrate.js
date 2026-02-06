@@ -1,5 +1,5 @@
-const voter_register = artifacts.require("voter_register");
+const Contract = artifacts.require("Contract");
 
 module.exports = function (deployer) {
-  deployer.deploy(voter_register);
+  deployer.deploy(Contract);
 };

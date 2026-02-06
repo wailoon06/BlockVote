@@ -1,28 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import VoterRegisterContract from "../Voter_Register.json";
+import { getDeployedContract, verifyContractExists } from '../utils/contractUtils';
+import MessageAlert from '../components/MessageAlert';
+import Navbar from '../components/Navbar';
+import Sidebar from '../components/Sidebar';
+import RoleSelectionModal from '../components/RoleSelectionModal';
 
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [isRegisteredAsAny, setIsRegisteredAsAny] = useState(false);
+  const [userStatus, setUserStatus] = useState(null);
   const navigate = useNavigate();
 
-  // Clear connection state on component mount
   useEffect(() => {
-    // Reset all states when component mounts (on page refresh)
-    setWalletAddress('');
-    setIsConnected(false);
-    setMessage('');
-    
-    // Add event listeners
     if (typeof window.ethereum !== 'undefined') {
       window.ethereum.on('accountsChanged', handleAccountsChanged);
       window.ethereum.on('disconnect', handleDisconnect);
     }
 
-    // Cleanup event listeners on unmount
     return () => {
       if (typeof window.ethereum !== 'undefined') {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
@@ -31,105 +30,183 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => {
+        setMessage('');
+        setMessageType('');
+      }, 2000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
+
   const handleAccountsChanged = (accounts) => {
     if (accounts.length === 0) {
-      // User disconnected their wallet
       setWalletAddress('');
       setIsConnected(false);
+      setIsRegisteredAsAny(false);
     } else if (accounts[0] !== walletAddress) {
-      // User switched accounts
       setWalletAddress(accounts[0]);
       setIsConnected(true);
+      checkRegistrationStatus(accounts[0]);
     }
   };
 
   const handleDisconnect = () => {
     setWalletAddress('');
     setIsConnected(false);
+    setIsRegisteredAsAny(false);
   };
 
-  // Check voter status and navigate accordingly
-  const checkVoterStatusAndNavigate = async (address) => {
+  const checkRegistrationStatus = async (address) => {
     try {
-      if (typeof window.ethereum === 'undefined') {
-        throw new Error('MetaMask not found');
+      const { deployedContract } = await getDeployedContract();
+
+      // Check if admin first
+      const adminStatus = await deployedContract.methods.isAdmin(address).call();
+      if (adminStatus) {
+        navigate('/admin');
+        return;
       }
 
-      const Web3 = (await import('web3')).default;
-      const web3 = new Web3(window.ethereum);
+      // Check if registered as voter or candidate
+      const isVoter = await deployedContract.methods.isVoterRegistered(address).call();
+      const isCandidate = await deployedContract.methods.isCandidateRegistered(address).call();
       
-      // Try to find deployed contract - check both chain ID and common network IDs
-      const chainId = await web3.eth.getChainId();
-      const networkId = await web3.eth.net.getId();
-      
-      // Try chain ID first, then network ID, then common IDs
-      const possibleIds = [chainId, networkId, 5777, 1337];
-      let deployedNetwork = null;
-      
-      for (const id of possibleIds) {
-        if (VoterRegisterContract.networks[id]) {
-          deployedNetwork = VoterRegisterContract.networks[id];
-          break;
+      // Check if registered as organizer
+      const isOrganizer = await deployedContract.methods.isOrganizerRegistered(address).call();
+
+      // Check if organizer is approved - redirect to dashboard
+      if (isOrganizer) {
+        const isApprovedOrganizer = await deployedContract.methods.isOrganizer(address).call();
+        if (isApprovedOrganizer) {
+          navigate('/organizer-dashboard');
+          return;
         }
       }
-      
-      if (!deployedNetwork) {
-        throw new Error(`Contract not deployed! Chain ID: ${chainId}, Network ID: ${networkId}. Make sure Ganache is running and contract is deployed.`);
-      }
 
-      const contract = new web3.eth.Contract(
-        VoterRegisterContract.abi,
-        deployedNetwork.address
-      );
-
-      // Verify contract exists at this address
-      const code = await web3.eth.getCode(deployedNetwork.address);
-      if (code === '0x' || code === '0x0') {
-        throw new Error(`No contract found at address ${deployedNetwork.address}. Please re-deploy the contract with 'truffle migrate --reset'.`);
-      }
-
-      // Check if wallet is registered
-      const isRegistered = await contract.methods
-        .isWalletRegistered(address)
-        .call();
-
-      if (!isRegistered) {
-        // Not registered - go to register page
-        navigate('/register', { state: { walletAddress: address } });
-      } else {
-        // Registered - check status
-        const voterInfo = await contract.methods.getVoterInfo(address).call();
+      // Set flag if registered as any entity
+      if (isVoter || isCandidate || isOrganizer) {
+        setIsRegisteredAsAny(true);
         
-        if (voterInfo.status === 'PENDING_VERIFICATION') {
-          // Pending verification - go to verification page
-          navigate('/verify', { state: { walletAddress: address } });
-        } else if (voterInfo.status === 'VERIFIED') {
-          // Already verified - stay on home page or go to voting page
-          setMessage('Welcome back! You are already verified.');
-          setMessageType('success');
-          // Optionally navigate to a voting/dashboard page
-          // navigate('/dashboard', { state: { walletAddress: address } });
+        // Get detailed status
+        if (isOrganizer) {
+          const organizerInfo = await deployedContract.methods.getOrganizerInfo(address).call();
+          const status = {
+            role: 'Organizer',
+            status: organizerInfo.status,
+            organizationName: organizerInfo.organizationName,
+            email: organizerInfo.email,
+            registeredAt: organizerInfo.registeredAt
+          };
+          setUserStatus(status);
+        } else if (isVoter) {
+          const voterInfo = await deployedContract.methods.getVoterInfo(address).call();
+          const status = {
+            role: 'Voter',
+            status: voterInfo.status,
+            name: voterInfo.name,
+            email: voterInfo.email,
+            registeredAt: voterInfo.registeredAt,
+            verifiedAt: voterInfo.verifiedAt
+          };
+          setUserStatus(status);
+        } else if (isCandidate) {
+          const candidateInfo = await deployedContract.methods.getCandidateInfo(address).call();
+          const status = {
+            role: 'Candidate',
+            status: candidateInfo.status,
+            name: candidateInfo.name,
+            email: candidateInfo.email,
+            party: candidateInfo.party,
+            registeredAt: candidateInfo.registeredAt,
+            verifiedAt: candidateInfo.verifiedAt
+          };
+          setUserStatus(status);
         }
+      } else {
+        setIsRegisteredAsAny(false);
+        setUserStatus(null);
       }
     } catch (error) {
-      console.error('Error checking voter status:', error);
-      setMessage('Failed to check voter status: ' + error.message);
-      setMessageType('danger');
+      console.error('Error checking registration status:', error);
+    }
+  };
+
+  const handleRoleSelection = (role) => {
+    setShowRoleModal(false);
+    if (role === 'voter') {
+      navigate('/register', { state: { walletAddress } });
+    } else if (role === 'candidate') {
+      navigate('/candidate-register', { state: { walletAddress } });
+    } else if (role === 'organizer') {
+      navigate('/organizer-register', { state: { walletAddress } });
+    }
+  };
+
+  const handleOrganizerRegisterClick = async () => {
+    if (!isConnected) {
+      try {
+        if (typeof window.ethereum !== 'undefined') {
+          const currentAccounts = await window.ethereum.request({ 
+            method: 'eth_accounts' 
+          });
+
+          if (currentAccounts.length > 0) {
+            try {
+              await window.ethereum.request({
+                method: 'wallet_requestPermissions',
+                params: [{
+                  eth_accounts: {}
+                }]
+              });
+            } catch (permError) {
+              if (permError.code === 4001) {
+                setMessage('Connection cancelled. Please try again.');
+                setMessageType('danger');
+                return;
+              }
+            }
+          }
+
+          const accounts = await window.ethereum.request({ 
+            method: 'eth_requestAccounts' 
+          });
+          
+          if (accounts.length > 0) {
+            setWalletAddress(accounts[0]);
+            setIsConnected(true);
+            setMessage('Wallet connected successfully!');
+            setMessageType('success');
+            
+            navigate('/organizer-register', { state: { walletAddress: accounts[0] } });
+          }
+        } else {
+          setMessage('Please install MetaMask!');
+          setMessageType('danger');
+        }
+      } catch (error) {
+        if (error.code === 4001) {
+          setMessage('Connection rejected. Please try again.');
+        } else {
+          setMessage('Failed to connect wallet: ' + error.message);
+        }
+        setMessageType('danger');
+      }
+    } else {
+      navigate('/organizer-register', { state: { walletAddress } });
     }
   };
 
   const connectWallet = async () => {
     try {
       if (typeof window.ethereum !== 'undefined') {
-        // First, get current accounts to check if already connected
         const currentAccounts = await window.ethereum.request({ 
           method: 'eth_accounts' 
         });
 
-        // If there are connected accounts, request to switch/select account
-        // This forces MetaMask to show the popup even if previously connected
         if (currentAccounts.length > 0) {
-          // Request wallet_requestPermissions to force account selection popup
           try {
             await window.ethereum.request({
               method: 'wallet_requestPermissions',
@@ -138,18 +215,16 @@ export default function Home() {
               }]
             });
           } catch (permError) {
-            // If user cancels, stop the connection process
             if (permError.code === 4001) {
               setMessage('Connection cancelled. Please try again.');
               setMessageType('danger');
-              return; // Exit the function
+              return;
             } else {
               console.log('Permission request failed:', permError);
             }
           }
         }
 
-        // Request account access - this will show MetaMask popup
         const accounts = await window.ethereum.request({ 
           method: 'eth_requestAccounts' 
         });
@@ -160,8 +235,7 @@ export default function Home() {
           setMessage('Wallet connected successfully!');
           setMessageType('success');
           
-          // Check voter status and navigate accordingly
-          await checkVoterStatusAndNavigate(accounts[0]);
+          await checkRegistrationStatus(accounts[0]);
         }
       } else {
         setMessage('Please install MetaMask!');
@@ -178,131 +252,800 @@ export default function Home() {
   };
 
   const logout = () => {
-    // Clear wallet connection state
     setWalletAddress('');
     setIsConnected(false);
+    setIsRegisteredAsAny(false);
+    setUserStatus(null);
     setMessage('Wallet disconnected successfully!');
     setMessageType('success');
     
-    // Clear message after 3 seconds
     setTimeout(() => {
       setMessage('');
     }, 3000);
   };
 
-  return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
-      {/* Navigation */}
-      <nav style={{ 
-        backgroundColor: '#0d6efd', 
-        padding: '1rem 0',
-        color: 'white'
-      }}>
-        <div style={{ 
-          maxWidth: '1200px', 
-          margin: '0 auto', 
-          padding: '0 1rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-            BlockVote
-          </div>
-          <div>
-            {!isConnected ? (
-              <button 
+  // Landing Page for Guests
+  if (!isConnected) {
+    return (
+      <>
+        <RoleSelectionModal 
+          isOpen={showRoleModal} 
+          onSelectRole={handleRoleSelection}
+          onClose={() => setShowRoleModal(false)}
+        />
+        <Navbar title="BlockVote" onConnect={connectWallet} isConnected={isConnected} />
+        
+        {/* Only show landing page content when modal is not open */}
+        {!showRoleModal && (
+          <div style={{ 
+            minHeight: '100vh',
+            paddingTop: '70px'
+          }}>
+            {message && <MessageAlert message={message} type={messageType} />}
+            
+            {/* Hero Section */}
+            <section style={{
+              padding: '5rem 2rem',
+              textAlign: 'center',
+              background: 'linear-gradient(135deg, #fafbfc 0%, #f0f9ff 50%, #e0f2fe 100%)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              {/* Decorative Elements */}
+              <div style={{
+                position: 'absolute',
+                top: '-10%',
+                right: '-5%',
+                width: '400px',
+                height: '400px',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, transparent 70%)',
+                pointerEvents: 'none'
+              }}></div>
+              <div style={{
+                position: 'absolute',
+                bottom: '-10%',
+                left: '-5%',
+                width: '350px',
+                height: '350px',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, transparent 70%)',
+                pointerEvents: 'none'
+              }}></div>
+
+              <div style={{ maxWidth: '900px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+                <div style={{ fontSize: '4rem', marginBottom: '1.5rem' }}>🗳️</div>
+                <h1 style={{
+                  fontSize: '3.5rem',
+                  fontWeight: '700',
+                  marginBottom: '1.5rem',
+                  background: 'linear-gradient(135deg, #0891b2 0%, #3b82f6 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                  lineHeight: '1.2'
+                }}>
+                  Secure Digital Voting<br/>on Blockchain
+                </h1>
+                <p style={{
+                  fontSize: '1.35rem',
+                  color: '#64748b',
+                  marginBottom: '3rem',
+                  lineHeight: '1.8',
+                  fontWeight: '400'
+                }}>
+                  Experience transparent, tamper-proof elections powered by<br/>
+                  blockchain technology and smart contracts
+                </p>
+              </div>
+            </section>
+
+            {/* Features Section */}
+            <section style={{
+              padding: '5rem 2rem',
+              backgroundColor: '#ffffff'
+            }}>
+              <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+                <h2 style={{
+                  textAlign: 'center',
+                  fontSize: '2.5rem',
+                  fontWeight: '700',
+                  marginBottom: '1rem',
+                  color: '#1e293b'
+                }}>
+                  Why Choose BlockVote?
+                </h2>
+                <p style={{
+                  textAlign: 'center',
+                  fontSize: '1.125rem',
+                  color: '#64748b',
+                  marginBottom: '4rem',
+                  maxWidth: '700px',
+                  margin: '0 auto 4rem'
+                }}>
+                  Built with cutting-edge blockchain technology to ensure integrity and transparency
+                </p>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                  gap: '2rem'
+                }}>
+                  {[
+                    {
+                      icon: '🔒',
+                      title: 'Secure & Immutable',
+                      description: 'Every vote is encrypted and recorded on the blockchain, making it impossible to alter or tamper with results.',
+                      color: '#06b6d4'
+                    },
+                    {
+                      icon: '👁️',
+                      title: 'Transparent Process',
+                      description: 'Full transparency with real-time vote tracking while maintaining voter anonymity and privacy.',
+                      color: '#3b82f6'
+                    },
+                    {
+                      icon: '⚡',
+                      title: 'Instant Results',
+                      description: 'Automated vote counting with instant result publication once the voting period ends.',
+                      color: '#8b5cf6'
+                    },
+                    {
+                      icon: '✓',
+                      title: 'Identity Verification',
+                      description: 'Robust KYC verification system ensures only eligible voters can participate in elections.',
+                      color: '#10b981'
+                    },
+                    {
+                      icon: '🌐',
+                    title: 'Decentralized',
+                    description: 'No central authority controls the voting process, ensuring true democratic participation.',
+                    color: '#f59e0b'
+                  },
+                  {
+                    icon: '📱',
+                    title: 'Easy to Use',
+                    description: 'Simple and intuitive interface makes voting accessible to everyone, anywhere, anytime.',
+                    color: '#ec4899'
+                  }
+                ].map((feature, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      backgroundColor: '#ffffff',
+                      padding: '2.5rem',
+                      borderRadius: '20px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 4px 6px rgba(0, 0, 0, 0.04)',
+                      transition: 'all 0.3s ease',
+                      cursor: 'default'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-8px)';
+                      e.currentTarget.style.boxShadow = '0 12px 24px rgba(0, 0, 0, 0.1)';
+                      e.currentTarget.style.borderColor = feature.color;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.04)';
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                    }}
+                  >
+                    <div style={{
+                      width: '64px',
+                      height: '64px',
+                      borderRadius: '16px',
+                      background: `linear-gradient(135deg, ${feature.color}20 0%, ${feature.color}10 100%)`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '2rem',
+                      marginBottom: '1.5rem'
+                    }}>
+                      {feature.icon}
+                    </div>
+                    <h3 style={{
+                      fontSize: '1.375rem',
+                      fontWeight: '600',
+                      marginBottom: '1rem',
+                      color: '#1e293b'
+                    }}>
+                      {feature.title}
+                    </h3>
+                    <p style={{
+                      fontSize: '1rem',
+                      color: '#64748b',
+                      lineHeight: '1.7'
+                    }}>
+                      {feature.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* CTA Section */}
+          <section style={{
+            padding: '5rem 2rem',
+            background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+            textAlign: 'center'
+          }}>
+            <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+              <h2 style={{
+                fontSize: '2.5rem',
+                fontWeight: '700',
+                color: 'white',
+                marginBottom: '1.5rem'
+              }}>
+                Ready to Get Started?
+              </h2>
+              <p style={{
+                fontSize: '1.25rem',
+                color: 'rgba(255, 255, 255, 0.9)',
+                marginBottom: '2.5rem',
+                lineHeight: '1.7'
+              }}>
+                Connect your wallet to register as a voter, candidate, or election organizer
+              </p>
+              <button
                 onClick={connectWallet}
                 style={{
-                  backgroundColor: 'white',
-                  color: '#0d6efd',
+                  padding: '1rem 3rem',
+                  fontSize: '1.125rem',
+                  fontWeight: '600',
+                  background: 'white',
+                  color: '#0891b2',
                   border: 'none',
-                  padding: '0.5rem 1.5rem',
-                  borderRadius: '0.25rem',
+                  borderRadius: '16px',
                   cursor: 'pointer',
-                  fontWeight: '500'
+                  boxShadow: '0 8px 20px rgba(0, 0, 0, 0.15)',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-3px) scale(1.05)';
+                  e.target.style.boxShadow = '0 12px 28px rgba(0, 0, 0, 0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0) scale(1)';
+                  e.target.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.15)';
                 }}
               >
-                Connect Wallet
-              </button>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <span style={{ color: 'white' }}>
-                  {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}
-                </span>
-                <button 
-                  onClick={logout}
-                  style={{
-                    backgroundColor: '#dc3545',
-                    color: 'white',
-                    border: 'none',
-                    padding: '0.5rem 1rem',
-                    borderRadius: '0.25rem',
-                    cursor: 'pointer',
-                    fontWeight: '500'
-                  }}
-                >
-                  Logout
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '3rem 1rem' }}>
-        <div style={{ textAlign: 'center', maxWidth: '800px', margin: '0 auto' }}>
-          <h1 style={{ fontSize: '3rem', fontWeight: 'bold', marginBottom: '1.5rem' }}>
-            Welcome to BlockVote
-          </h1>
-          {message && (
-            <div style={{
-              backgroundColor: messageType === 'success' ? '#d1e7dd' : '#f8d7da',
-              color: messageType === 'success' ? '#0f5132' : '#842029',
-              padding: '1rem',
-              borderRadius: '0.25rem',
-              marginBottom: '1rem',
-              maxWidth: '500px',
-              margin: '0 auto 2rem auto',
-              position: 'relative'
-            }}>
-              {message}
-              <button 
-                onClick={() => setMessage('')}
-                style={{
-                  position: 'absolute',
-                  right: '1rem',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '1.5rem',
-                  cursor: 'pointer',
-                  color: 'inherit'
-                }}
-              >
-                ×
+                Connect Your Wallet Now
               </button>
             </div>
-          )}
+          </section>
 
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '0.5rem',
-            boxShadow: '0 0.5rem 1rem rgba(0,0,0,0.15)',
-            padding: '3rem',
-            marginTop: '3rem'
+          {/* Footer */}
+          <footer style={{
+            padding: '3rem 2rem',
+            backgroundColor: '#1e293b',
+            color: 'white',
+            textAlign: 'center'
           }}>
-            <h3 style={{ marginBottom: '1.5rem' }}>BlockVote</h3>
-            <p style={{ color: '#6c757d', lineHeight: '1.8' }}>
-              Innovation transparency immutable consensus distributed ledger cryptography 
-              decentralization smart contracts verification authenticity reliability 
-              empowerment participation governance integrity accountability trust
+            <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', marginBottom: '1rem' }}>
+                🗳️ BlockVote
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
+                © 2026 BlockVote. Secure, Transparent, Democratic.
+              </p>
+            </div>
+          </footer>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // Dashboard for Logged In Users
+  return (
+    <>
+      <Navbar 
+        title="BlockVote" 
+        walletAddress={walletAddress}
+        onLogout={logout}
+        userRole={isRegisteredAsAny ? userStatus?.role : null}
+        isConnected={isConnected}
+      />
+      <Sidebar userRole={isRegisteredAsAny ? userStatus?.role : null} />
+      
+      <div style={{ 
+        marginLeft: '70px',
+        marginTop: '70px',
+        minHeight: 'calc(100vh - 70px)',
+        padding: '2.5rem',
+        backgroundColor: '#fafbfc'
+      }}>
+        {message && <MessageAlert message={message} type={messageType} />}
+        
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+          {/* Show registration options for new users */}
+          {!isRegisteredAsAny ? (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              minHeight: 'calc(100vh - 200px)' 
+            }}>
+              <div style={{ maxWidth: '900px', width: '100%' }}>
+                <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+                  <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🗳️</div>
+                  <h1 style={{
+                    fontSize: '2.5rem',
+                    fontWeight: '700',
+                    marginBottom: '1rem',
+                    color: '#1e293b'
+                  }}>
+                    Welcome to BlockVote!
+                  </h1>
+                  <p style={{
+                    fontSize: '1.125rem',
+                    color: '#64748b',
+                    lineHeight: '1.6'
+                  }}>
+                    Choose your role to get started with secure blockchain voting
+                  </p>
+                </div>
+
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', 
+                  gap: '1.5rem' 
+                }}>
+                  {/* Voter Card */}
+                  <div
+                    onClick={() => navigate('/register', { state: { walletAddress } })}
+                    style={{
+                      backgroundColor: 'white',
+                      padding: '2.5rem',
+                      borderRadius: '16px',
+                      border: '2px solid #e2e8f0',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      textAlign: 'center'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-8px)';
+                      e.currentTarget.style.borderColor = '#06b6d4';
+                      e.currentTarget.style.boxShadow = '0 12px 24px rgba(6, 182, 212, 0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <div style={{ 
+                      fontSize: '3.5rem', 
+                      marginBottom: '1.5rem',
+                      background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text'
+                    }}>
+                      🗳️
+                    </div>
+                    <h3 style={{
+                      fontSize: '1.5rem',
+                      fontWeight: '600',
+                      color: '#1e293b',
+                      marginBottom: '0.75rem'
+                    }}>
+                      Register as Voter
+                    </h3>
+                    <p style={{
+                      color: '#64748b',
+                      fontSize: '0.95rem',
+                      lineHeight: '1.6',
+                      marginBottom: '1.5rem'
+                    }}>
+                      Participate in elections by casting your vote securely on the blockchain
+                    </p>
+                    <div style={{
+                      padding: '0.75rem 1.5rem',
+                      background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      fontWeight: '600',
+                      fontSize: '0.95rem',
+                      display: 'inline-block'
+                    }}>
+                      Get Started →
+                    </div>
+                  </div>
+
+                  {/* Candidate Card */}
+                  <div
+                    onClick={() => navigate('/candidate-register', { state: { walletAddress } })}
+                    style={{
+                      backgroundColor: 'white',
+                      padding: '2.5rem',
+                      borderRadius: '16px',
+                      border: '2px solid #e2e8f0',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      textAlign: 'center'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-8px)';
+                      e.currentTarget.style.borderColor = '#8b5cf6';
+                      e.currentTarget.style.boxShadow = '0 12px 24px rgba(139, 92, 246, 0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <div style={{ 
+                      fontSize: '3.5rem', 
+                      marginBottom: '1.5rem',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text'
+                    }}>
+                      👔
+                    </div>
+                    <h3 style={{
+                      fontSize: '1.5rem',
+                      fontWeight: '600',
+                      color: '#1e293b',
+                      marginBottom: '0.75rem'
+                    }}>
+                      Register as Candidate
+                    </h3>
+                    <p style={{
+                      color: '#64748b',
+                      fontSize: '0.95rem',
+                      lineHeight: '1.6',
+                      marginBottom: '1.5rem'
+                    }}>
+                      Run for office and represent your community in elections
+                    </p>
+                    <div style={{
+                      padding: '0.75rem 1.5rem',
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      fontWeight: '600',
+                      fontSize: '0.95rem',
+                      display: 'inline-block'
+                    }}>
+                      Get Started →
+                    </div>
+                  </div>
+
+                  {/* Organizer Card */}
+                  <div
+                    onClick={() => navigate('/organizer-register', { state: { walletAddress } })}
+                    style={{
+                      backgroundColor: 'white',
+                      padding: '2.5rem',
+                      borderRadius: '16px',
+                      border: '2px solid #e2e8f0',
+                      cursor: 'pointer',
+                      transition: 'all 0.3s ease',
+                      textAlign: 'center'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-8px)';
+                      e.currentTarget.style.borderColor = '#10b981';
+                      e.currentTarget.style.boxShadow = '0 12px 24px rgba(16, 185, 129, 0.15)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <div style={{ 
+                      fontSize: '3.5rem', 
+                      marginBottom: '1.5rem',
+                      background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text'
+                    }}>
+                      🏢
+                    </div>
+                    <h3 style={{
+                      fontSize: '1.5rem',
+                      fontWeight: '600',
+                      color: '#1e293b',
+                      marginBottom: '0.75rem'
+                    }}>
+                      Register as Organizer
+                    </h3>
+                    <p style={{
+                      color: '#64748b',
+                      fontSize: '0.95rem',
+                      lineHeight: '1.6',
+                      marginBottom: '1.5rem'
+                    }}>
+                      Create and manage elections for your organization
+                    </p>
+                    <div style={{
+                      padding: '0.75rem 1.5rem',
+                      background: 'linear-gradient(135deg, #10b981 0%, #06b6d4 100%)',
+                      color: 'white',
+                      borderRadius: '8px',
+                      fontWeight: '600',
+                      fontSize: '0.95rem',
+                      display: 'inline-block'
+                    }}>
+                      Get Started →
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+          {/* Check if user is verified or not */}
+          {userStatus && userStatus.status === 'VERIFIED' ? (
+            <>
+          {/* Welcome Header - For Verified Users */}
+          <div style={{ marginBottom: '2.5rem' }}>
+            <h1 style={{
+              fontSize: '2rem',
+              fontWeight: '600',
+              color: '#1e293b',
+              marginBottom: '0.5rem'
+            }}>
+              Welcome back! 👋
+            </h1>
+            <p style={{ color: '#64748b', fontSize: '1rem' }}>
+              Here's what's happening with your voting activities
             </p>
           </div>
+
+          {/* Quick Actions - For Verified Users */}
+          <div style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.04)',
+            marginBottom: '2.5rem'
+          }}>
+            <h2 style={{
+              fontSize: '1.25rem',
+              fontWeight: '600',
+              color: '#1e293b',
+              marginBottom: '1.5rem'
+            }}>
+              Quick Actions
+            </h2>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '1rem'
+            }}>
+              {(userStatus?.role === 'Candidate' ? [
+                { label: 'Apply to Elections', icon: '📝', path: '/candidate-elections' },
+                { label: 'My Elections', icon: '🎯', path: '/candidate-my-elections' }
+              ] : userStatus?.role === 'Voter' ? [
+                { label: 'Vote in Elections', icon: '🗳️', path: '/voter-elections' }
+              ] : [
+                { label: 'View Elections', icon: '📊', path: '/elections' }
+              ]).map((action, index) => (
+                <button
+                  key={index}
+                  onClick={() => navigate(action.path)}
+                  style={{
+                    padding: '1.25rem',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    fontSize: '0.95rem',
+                    fontWeight: '500',
+                    color: '#475569'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#e0f2fe';
+                    e.currentTarget.style.borderColor = '#06b6d4';
+                    e.currentTarget.style.color = '#0891b2';
+                    e.currentTarget.style.transform = 'translateX(4px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
+                    e.currentTarget.style.color = '#475569';
+                    e.currentTarget.style.transform = 'translateX(0)';
+                  }}
+                >
+                  <span style={{ fontSize: '1.5rem' }}>{action.icon}</span>
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* User Status Card */}
+          {userStatus && (
+            <div style={{
+              backgroundColor: 'white',
+              padding: '2rem',
+              borderRadius: '16px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.04)'
+            }}>
+              <h2 style={{
+                fontSize: '1.25rem',
+                fontWeight: '600',
+                color: '#1e293b',
+                marginBottom: '1.5rem'
+              }}>
+                Your Account Status
+              </h2>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '1.5rem'
+              }}>
+                <div>
+                  <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+                    Role
+                  </div>
+                  <div style={{ color: '#1e293b', fontWeight: '600', textTransform: 'capitalize' }}>
+                    {userStatus?.role}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.25rem' }}>
+                    Status
+                  </div>
+                  <div>
+                    <span style={{
+                      padding: '0.25rem 0.75rem',
+                      borderRadius: '8px',
+                      fontSize: '0.875rem',
+                      fontWeight: '600',
+                      backgroundColor: userStatus.status === 'VERIFIED' ? '#d1fae5' : '#fef3c7',
+                      color: userStatus.status === 'VERIFIED' ? '#065f46' : '#92400e'
+                    }}>
+                      {userStatus.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          </>
+          ) : (
+            <>
+          {/* Content for Registered but Not Verified Users */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            minHeight: 'calc(100vh - 200px)' 
+          }}>
+            <div style={{ maxWidth: '700px', width: '100%' }}>
+              {/* User Status Card */}
+              {userStatus && (
+                <div style={{
+                  backgroundColor: 'white',
+                  padding: '3rem',
+                  borderRadius: '16px',
+                  border: '2px solid #e2e8f0',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '4rem', marginBottom: '1.5rem' }}>
+                    {userStatus.role === 'Organizer' ? '🏢' : '⏳'}
+                  </div>
+                  <h2 style={{
+                    fontSize: '2rem',
+                    fontWeight: '600',
+                    color: '#1e293b',
+                    marginBottom: '1rem'
+                  }}>
+                    {userStatus.role === 'Organizer' ? 'Account Pending Approval' : 'Account Pending Verification'}
+                  </h2>
+                  <p style={{
+                    color: '#64748b',
+                    fontSize: '1.125rem',
+                    marginBottom: '2.5rem',
+                    lineHeight: '1.6'
+                  }}>
+                    {userStatus.role === 'Organizer' 
+                      ? 'Your organizer account has been registered and is awaiting admin approval'
+                      : 'Your account has been registered but needs to be verified before you can participate'}
+                  </p>
+                  
+                  <div style={{
+                    backgroundColor: '#f8fafc',
+                    padding: '2rem',
+                    borderRadius: '12px',
+                    marginBottom: userStatus.role === 'Organizer' ? '0' : '2rem',
+                    border: '1px solid #e2e8f0'
+                  }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                      gap: '1.5rem',
+                      textAlign: 'left'
+                    }}>
+                      <div>
+                        <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+                          Role
+                        </div>
+                        <div style={{ color: '#1e293b', fontWeight: '600', fontSize: '1.125rem', textTransform: 'capitalize' }}>
+                          {userStatus?.role}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+                          Status
+                        </div>
+                        <div>
+                          <span style={{
+                            padding: '0.5rem 1rem',
+                            borderRadius: '8px',
+                            fontSize: '0.875rem',
+                            fontWeight: '600',
+                            backgroundColor: '#fef3c7',
+                            color: '#92400e',
+                            display: 'inline-block'
+                          }}>
+                            {userStatus.status}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Only show Verify button for non-organizers */}
+                  {userStatus.role !== 'Organizer' && (
+                    <button
+                      onClick={() => navigate('/verify', { state: { walletAddress } })}
+                      style={{
+                        padding: '1rem 2.5rem',
+                        background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        fontSize: '1.125rem',
+                        fontWeight: '600',
+                        boxShadow: '0 4px 12px rgba(6, 182, 212, 0.3)',
+                        transition: 'all 0.2s ease',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        marginTop: '2rem'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 6px 16px rgba(6, 182, 212, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(6, 182, 212, 0.3)';
+                      }}
+                    >
+                      <span style={{ fontSize: '1.5rem' }}>✓</span>
+                      Verify Your Account
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          </>
+          )}
+          </>
+          )}
         </div>
       </div>
-    </div>
+    </>
   );
 }

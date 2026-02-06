@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import VoterRegisterContract from "../Voter_Register.json";
+import { getDeployedContract } from '../utils/contractUtils';
+import Navbar from '../components/Navbar';
+import MessageAlert from '../components/MessageAlert';
 
 export default function Register() {
   const location = useLocation();
@@ -22,7 +24,6 @@ export default function Register() {
       setMessage('Please connect your wallet first');
       setMessageType('danger');
       setChecking(false);
-      // Redirect to home after 2 seconds
       setTimeout(() => navigate('/'), 2000);
     } else {
       checkVoterStatus();
@@ -31,47 +32,18 @@ export default function Register() {
 
   const checkVoterStatus = async () => {
     try {
-      if (typeof window.ethereum === 'undefined') {
-        throw new Error('MetaMask not found');
-      }
+      const { deployedContract } = await getDeployedContract();
 
-      const Web3 = (await import('web3')).default;
-      const web3 = new Web3(window.ethereum);
-      
-      // Try to find deployed contract
-      const chainId = await web3.eth.getChainId();
-      const networkId = await web3.eth.net.getId();
-      const possibleIds = [chainId, networkId, 5777, 1337];
-      let deployedNetwork = null;
-      for (const id of possibleIds) {
-        if (VoterRegisterContract.networks[id]) {
-          deployedNetwork = VoterRegisterContract.networks[id];
-          break;
-        }
-      }
-      if (!deployedNetwork) {
-        throw new Error('Contract not deployed!');
-      }
-
-      const contract = new web3.eth.Contract(
-        VoterRegisterContract.abi,
-        deployedNetwork.address
-      );
-
-      // Check if wallet is already registered
-      const isRegistered = await contract.methods
+      const isRegistered = await deployedContract.methods
         .isWalletRegistered(walletAddress)
         .call();
 
       if (isRegistered) {
-        // Get voter info to check status
-        const voterInfo = await contract.methods.getVoterInfo(walletAddress).call();
+        const voterInfo = await deployedContract.methods.getVoterInfo(walletAddress).call();
         
         if (voterInfo.status === 'PENDING_VERIFICATION') {
-          // Redirect to verification page
           navigate('/verify', { state: { walletAddress } });
         } else if (voterInfo.status === 'VERIFIED') {
-          // Redirect to home page
           navigate('/', { state: { message: 'You are already registered and verified!' } });
         }
       }
@@ -91,7 +63,6 @@ export default function Register() {
   };
 
   const logout = () => {
-    // Clear state and redirect to home (without wallet address state)
     navigate('/', { replace: true });
   };
 
@@ -101,52 +72,21 @@ export default function Register() {
     setMessage('');
 
     try {
-      // Check if wallet is connected
       if (!walletAddress) {
         throw new Error('Please connect your wallet first');
       }
 
-      // Check if MetaMask is available
-      if (typeof window.ethereum === 'undefined') {
-        throw new Error('MetaMask not found');
-      }
+      const { deployedContract } = await getDeployedContract();
 
-      // Import Web3
-      const Web3 = (await import('web3')).default;
-      const web3 = new Web3(window.ethereum);
-      
-      // Get contract instance
-      const chainId = await web3.eth.getChainId();
-      const networkId = await web3.eth.net.getId();
-      const possibleIds = [chainId, networkId, 5777, 1337];
-      let deployedNetwork = null;
-      for (const id of possibleIds) {
-        if (VoterRegisterContract.networks[id]) {
-          deployedNetwork = VoterRegisterContract.networks[id];
-          break;
-        }
-      }
-      if (!deployedNetwork) {
-        throw new Error('Contract not deployed!');
-      }
-      
-      const contract = new web3.eth.Contract(
-        VoterRegisterContract.abi,
-        deployedNetwork.address
-      );
-
-      // Register voter - sends IC hash, not plaintext
-      const result = await contract.methods
+      const result = await deployedContract.methods
         .registerVoter(formData.name, formData.ic, formData.email)
         .send({ from: walletAddress });
 
       setMessage('Registration successful! Redirecting to verification...');
       setMessageType('success');
       
-      // Clear form
       setFormData({ name: '', ic: '', email: '' });
       
-      // Redirect to verification page after successful registration
       setTimeout(() => {
         navigate('/verify', { state: { walletAddress } });
       }, 2000);
@@ -172,199 +112,245 @@ export default function Register() {
 
   if (checking) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ 
+        minHeight: '100vh', 
+        backgroundColor: '#f5f7fa', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center' 
+      }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Checking registration status...</div>
+          <div style={{ 
+            fontSize: '3rem', 
+            marginBottom: '1rem',
+            color: '#1e3a5f'
+          }}>⏳</div>
+          <div style={{ 
+            fontSize: '1.25rem',
+            color: '#6c757d',
+            fontWeight: '500'
+          }}>
+            Checking registration status...
+          </div>
         </div>
       </div>
     );
   }
 
-  
-  
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
-      {/* Navigation */}
-      <nav style={{ 
-        backgroundColor: '#0d6efd', 
-        padding: '1rem 0',
-        color: 'white'
-      }}>
-        <div style={{ 
-          maxWidth: '1200px', 
-          margin: '0 auto', 
-          padding: '0 1rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
+    <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa' }}>
+      <Navbar 
+        title="BlockVote - Voter Registration" 
+        walletAddress={walletAddress} 
+        onLogout={logout} 
+      />
+
+      <div style={{ maxWidth: '600px', margin: '0 auto', padding: '0 1.5rem', paddingTop: 'calc(70px + 4rem)' }}>
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '0.75rem',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+          padding: '3rem',
+          border: '1px solid #e8e8e8'
         }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-            VoteChain - Registration
+          <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📝</div>
+            <h2 style={{ 
+              color: '#1e3a5f',
+              fontSize: '1.75rem',
+              fontWeight: '600',
+              marginBottom: '0.5rem'
+            }}>
+              Voter Registration
+            </h2>
+            <p style={{ color: '#6c757d', fontSize: '0.95rem' }}>
+              Please provide your details to register as a voter
+            </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ fontFamily: 'monospace' }}>
-              {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}
-            </span>
+        
+          <MessageAlert 
+            message={message} 
+            type={messageType} 
+            onClose={() => setMessage('')} 
+          />
+
+          <form onSubmit={handleRegister}>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.5rem', 
+                fontWeight: '600',
+                color: '#1e3a5f',
+                fontSize: '0.95rem'
+              }}>
+                Full Name
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleInputChange}
+                required
+                placeholder="Enter your full name"
+                style={{
+                  width: '100%',
+                  padding: '0.875rem',
+                  border: '1.5px solid #e0e0e0',
+                  borderRadius: '0.5rem',
+                  fontSize: '1rem',
+                  transition: 'border-color 0.2s',
+                  outline: 'none'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#1e3a5f'}
+                onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
+              />
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.5rem', 
+                fontWeight: '600',
+                color: '#1e3a5f',
+                fontSize: '0.95rem'
+              }}>
+                IC Number
+              </label>
+              <input
+                type="text"
+                name="ic"
+                value={formData.ic}
+                onChange={handleInputChange}
+                required
+                placeholder="Enter your IC number"
+                style={{
+                  width: '100%',
+                  padding: '0.875rem',
+                  border: '1.5px solid #e0e0e0',
+                  borderRadius: '0.5rem',
+                  fontSize: '1rem',
+                  transition: 'border-color 0.2s',
+                  outline: 'none'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#1e3a5f'}
+                onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
+              />
+              <small style={{ 
+                color: '#6c757d', 
+                fontSize: '0.825rem',
+                display: 'block',
+                marginTop: '0.5rem'
+              }}>
+                🔒 Your IC will be hashed for privacy protection
+              </small>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.5rem', 
+                fontWeight: '600',
+                color: '#1e3a5f',
+                fontSize: '0.95rem'
+              }}>
+                Email Address
+              </label>
+              <input
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleInputChange}
+                required
+                placeholder="your.email@example.com"
+                style={{
+                  width: '100%',
+                  padding: '0.875rem',
+                  border: '1.5px solid #e0e0e0',
+                  borderRadius: '0.5rem',
+                  fontSize: '1rem',
+                  transition: 'border-color 0.2s',
+                  outline: 'none'
+                }}
+                onFocus={(e) => e.target.style.borderColor = '#1e3a5f'}
+                onBlur={(e) => e.target.style.borderColor = '#e0e0e0'}
+              />
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label style={{ 
+                display: 'block', 
+                marginBottom: '0.5rem', 
+                fontWeight: '600',
+                color: '#1e3a5f',
+                fontSize: '0.95rem'
+              }}>
+                Wallet Address
+              </label>
+              <input
+                type="text"
+                value={walletAddress}
+                disabled
+                style={{
+                  width: '100%',
+                  padding: '0.875rem',
+                  border: '1.5px solid #e0e0e0',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.9rem',
+                  backgroundColor: '#f5f7fa',
+                  color: '#6c757d',
+                  fontFamily: 'monospace'
+                }}
+              />
+            </div>
+
             <button 
-              onClick={logout}
+              type="submit"
+              disabled={loading || !walletAddress}
               style={{
-                backgroundColor: '#dc3545',
+                width: '100%',
+                padding: '1rem',
+                backgroundColor: loading || !walletAddress ? '#9ca3af' : '#1e3a5f',
                 color: 'white',
                 border: 'none',
-                padding: '0.5rem 1rem',
-                borderRadius: '0.25rem',
-                cursor: 'pointer',
-                fontWeight: '500'
+                borderRadius: '0.5rem',
+                fontSize: '1.05rem',
+                cursor: (loading || !walletAddress) ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                transition: 'all 0.2s',
+                boxShadow: loading || !walletAddress ? 'none' : '0 2px 8px rgba(30,58,95,0.2)'
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && walletAddress) {
+                  e.target.style.backgroundColor = '#2c5282';
+                  e.target.style.transform = 'translateY(-1px)';
+                  e.target.style.boxShadow = '0 4px 12px rgba(30,58,95,0.3)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!loading && walletAddress) {
+                  e.target.style.backgroundColor = '#1e3a5f';
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 2px 8px rgba(30,58,95,0.2)';
+                }
               }}
             >
-              Logout
+              {loading ? 'Registering...' : !walletAddress ? 'Connect Wallet First' : 'Complete Registration'}
             </button>
-          </div>
+
+            <div style={{
+              marginTop: '1.5rem',
+              padding: '1rem',
+              backgroundColor: '#e8f4f8',
+              borderRadius: '0.5rem',
+              border: '1px solid #2c5282',
+              fontSize: '0.875rem',
+              color: '#495057',
+              lineHeight: '1.6'
+            }}>
+              ℹ️ After registration, you'll receive a verification code. Keep it safe to verify your account.
+            </div>
+          </form>
         </div>
-      </nav>
-
-      {/* Main Content */}
-      <div style={{ maxWidth: '600px', margin: '3rem auto', padding: '0 1rem' }}>
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '0.5rem',
-        boxShadow: '0 0.5rem 1rem rgba(0,0,0,0.15)',
-        padding: '3rem'
-      }}>
-        <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          Voter Registration
-        </h2>
-        
-        {message && (
-          <div style={{
-            backgroundColor: messageType === 'success' ? '#d1e7dd' : '#f8d7da',
-            color: messageType === 'success' ? '#0f5132' : '#842029',
-            padding: '1rem',
-            borderRadius: '0.25rem',
-            marginBottom: '1rem',
-            position: 'relative'
-          }}>
-            {message}
-            <button 
-              onClick={() => setMessage('')}
-              style={{
-                position: 'absolute',
-                right: '1rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                background: 'none',
-                border: 'none',
-                fontSize: '1.5rem',
-                cursor: 'pointer',
-                color: 'inherit'
-              }}
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-            Full Name
-          </label>
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleInputChange}
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              border: '1px solid #ced4da',
-              borderRadius: '0.25rem',
-              fontSize: '1rem'
-            }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-            IC Number
-          </label>
-          <input
-            type="text"
-            name="ic"
-            value={formData.ic}
-            onChange={handleInputChange}
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              border: '1px solid #ced4da',
-              borderRadius: '0.25rem',
-              fontSize: '1rem'
-            }}
-          />
-          <small style={{ color: '#6c757d', fontSize: '0.875rem' }}>
-            Your IC will be hashed for privacy
-          </small>
-        </div>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-            Email Address
-          </label>
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleInputChange}
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              border: '1px solid #ced4da',
-              borderRadius: '0.25rem',
-              fontSize: '1rem'
-            }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
-            Wallet Address
-          </label>
-          <input
-            type="text"
-            value={walletAddress}
-            disabled
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              border: '1px solid #ced4da',
-              borderRadius: '0.25rem',
-              fontSize: '1rem',
-              backgroundColor: '#e9ecef',
-              color: '#495057'
-            }}
-          />
-        </div>
-
-        <button 
-          onClick={handleRegister}
-          disabled={loading || !walletAddress}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            backgroundColor: loading || !walletAddress ? '#6c757d' : '#0d6efd',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.25rem',
-            fontSize: '1rem',
-            cursor: (loading || !walletAddress) ? 'not-allowed' : 'pointer',
-            fontWeight: '500'
-          }}
-        >
-          {loading ? 'Registering...' : !walletAddress ? 'Connect Wallet First' : 'Register'}
-        </button>
-      </div>
       </div>
     </div>
   );
