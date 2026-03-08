@@ -111,9 +111,10 @@ module.exports = {
       settings: {          // See the solidity docs for advice about optimization and evmVersion
        optimizer: {
          enabled: true,
-         runs: 20
+         runs: 1           // runs:1 minimises bytecode size (at cost of per-call gas)
        },
-       evmVersion: "london"
+       evmVersion: "london",
+       viaIR: true         // Enable IR-based code generation to avoid "stack too deep" errors
       }
     }
   },

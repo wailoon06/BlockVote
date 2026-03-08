@@ -169,3 +169,22 @@ button:disabled {
 .fw-medium { font-weight: var(--font-weight-medium); }
 .fw-semibold { font-weight: var(--font-weight-semibold); }
 .fw-bold { font-weight: var(--font-weight-bold); }
+
+/* Animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

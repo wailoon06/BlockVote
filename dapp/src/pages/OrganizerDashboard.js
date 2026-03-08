@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import MessageAlert from '../components/MessageAlert';
@@ -7,6 +7,7 @@ import { getDeployedContract } from '../utils/contractUtils';
 
 function OrganizerDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [contract, setContract] = useState(null);
   const [walletAddress, setWalletAddress] = useState('');
   const [organizerInfo, setOrganizerInfo] = useState(null);
@@ -21,20 +22,23 @@ function OrganizerDashboard() {
   const [newElection, setNewElection] = useState({
     title: '',
     description: '',
-    nominationStartDate: '',
-    nominationStartTime: '',
-    nominationEndDate: '',
-    nominationEndTime: '',
-    startDate: '',
-    startTime: '',
-    endDate: '',
-    endTime: ''
+    nominationStartDateTime: '',
+    nominationEndDateTime: '',
+    startDateTime: '',
+    endDateTime: ''
   });
   const [message, setMessage] = useState({ text: '', type: '' });
 
   useEffect(() => {
     initializeWeb3();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('action') === 'create') {
+      setShowCreateModal(true);
+    }
+  }, [location]);
 
   useEffect(() => {
     if (message.text) {
@@ -130,7 +134,7 @@ function OrganizerDashboard() {
           .call();
 
         const election = {
-          id: id,
+          id: Number(id),
           title: info.title,
           description: info.description,
           nominationStartTime: Number(info.nominationStartTime),
@@ -179,11 +183,11 @@ function OrganizerDashboard() {
     }
 
     try {
-      // Combine date and time
-      const nominationStartDateTime = new Date(`${newElection.nominationStartDate}T${newElection.nominationStartTime}`);
-      const nominationEndDateTime = new Date(`${newElection.nominationEndDate}T${newElection.nominationEndTime}`);
-      const startDateTime = new Date(`${newElection.startDate}T${newElection.startTime}`);
-      const endDateTime = new Date(`${newElection.endDate}T${newElection.endTime}`);
+      // Parse datetime-local values
+      const nominationStartDateTime = new Date(newElection.nominationStartDateTime);
+      const nominationEndDateTime = new Date(newElection.nominationEndDateTime);
+      const startDateTime = new Date(newElection.startDateTime);
+      const endDateTime = new Date(newElection.endDateTime);
 
       // Convert to Unix timestamp (seconds)
       const nominationStartTimestamp = Math.floor(nominationStartDateTime.getTime() / 1000);
@@ -228,14 +232,10 @@ function OrganizerDashboard() {
       setNewElection({
         title: '',
         description: '',
-        nominationStartDate: '',
-        nominationStartTime: '',
-        nominationEndDate: '',
-        nominationEndTime: '',
-        startDate: '',
-        startTime: '',
-        endDate: '',
-        endTime: ''
+        nominationStartDateTime: '',
+        nominationEndDateTime: '',
+        startDateTime: '',
+        endDateTime: ''
       });
 
       // Reload elections
@@ -282,7 +282,16 @@ function OrganizerDashboard() {
   };
 
   const formatDateTime = (timestamp) => {
-    return new Date(timestamp * 1000).toLocaleString();
+    const date = new Date(timestamp * 1000);
+    const options = { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    };
+    return date.toLocaleString('en-US', options);
   };
 
   const handleLogout = () => {
@@ -299,234 +308,494 @@ function OrganizerDashboard() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <Navbar walletAddress={walletAddress} userRole="organizer" onLogout={handleLogout} />
       <Sidebar userRole="organizer" />
       <MessageAlert message={message.text} type={message.type} />
 
-      <div style={{ maxWidth: '1200px', margin: '0 auto', marginLeft: '90px', padding: '40px 20px', paddingTop: 'calc(70px + 40px)' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '30px' }}>
-          <div
-            onClick={() => navigate('/')}
-            style={{ cursor: 'pointer', display: 'inline-block' }}
-          >
-            <h1 style={{ color: '#1e3a5f', marginBottom: '10px' }}>Organizer Dashboard</h1>
+      <div style={{ margin: '0', marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1600px' }}>
+        {/* Header Section */}
+        <div style={{ marginBottom: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+            <div>
+              <h1 style={{ 
+                color: '#1e293b', 
+                marginBottom: '8px', 
+                fontSize: '32px',
+                fontWeight: '700',
+                letterSpacing: '-0.02em'
+              }}>
+                Organizer Dashboard
+              </h1>
+              {organizerInfo && (
+                <p style={{ 
+                  color: '#64748b', 
+                  fontSize: '18px',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ fontSize: '20px' }}>🏢</span>
+                  {organizerInfo.organizationName}
+                </p>
+              )}
+            </div>
           </div>
-          {organizerInfo && (
-            <p style={{ color: '#666', fontSize: '16px' }}>
-              {organizerInfo.organizationName}
-            </p>
-          )}
         </div>
 
-        {/* Statistics Cards */}
+        {/* Statistics Cards with Icons */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-          gap: '20px',
-          marginBottom: '30px'
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '24px',
+          marginBottom: '40px'
         }}>
           <div style={{
             backgroundColor: 'white',
-            padding: '25px',
-            borderRadius: '10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            borderLeft: '4px solid #1e3a5f'
+            padding: '28px',
+            borderRadius: '16px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)',
+            border: '1px solid #e2e8f0',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'default'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)';
           }}>
-            <h3 style={{ color: '#666', fontSize: '14px', marginBottom: '10px' }}>
-              Total Elections
-            </h3>
-            <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#1e3a5f', margin: 0 }}>
-              {statistics.totalElections}
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+              <div>
+                <p style={{ 
+                  color: '#64748b', 
+                  fontSize: '14px', 
+                  marginBottom: '12px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Total Elections
+                </p>
+                <p style={{ 
+                  fontSize: '40px', 
+                  fontWeight: '800', 
+                  color: '#1e293b', 
+                  margin: 0,
+                  lineHeight: '1'
+                }}>
+                  {statistics.totalElections}
+                </p>
+              </div>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '12px',
+                backgroundColor: '#eff6ff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '28px'
+              }}>
+                📊
+              </div>
+            </div>
           </div>
 
           <div style={{
             backgroundColor: 'white',
-            padding: '25px',
-            borderRadius: '10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            borderLeft: '4px solid #28a745'
+            padding: '28px',
+            borderRadius: '16px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)',
+            border: '1px solid #e2e8f0',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'default'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)';
           }}>
-            <h3 style={{ color: '#666', fontSize: '14px', marginBottom: '10px' }}>
-              Active Elections
-            </h3>
-            <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#28a745', margin: 0 }}>
-              {statistics.activeElections}
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+              <div>
+                <p style={{ 
+                  color: '#64748b', 
+                  fontSize: '14px', 
+                  marginBottom: '12px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Active Elections
+                </p>
+                <p style={{ 
+                  fontSize: '40px', 
+                  fontWeight: '800', 
+                  color: '#16a34a', 
+                  margin: 0,
+                  lineHeight: '1'
+                }}>
+                  {statistics.activeElections}
+                </p>
+              </div>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '12px',
+                backgroundColor: '#f0fdf4',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '28px'
+              }}>
+                ✅
+              </div>
+            </div>
           </div>
 
           <div style={{
             backgroundColor: 'white',
-            padding: '25px',
-            borderRadius: '10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            borderLeft: '4px solid #ffc107'
+            padding: '28px',
+            borderRadius: '16px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)',
+            border: '1px solid #e2e8f0',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'default'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)';
           }}>
-            <h3 style={{ color: '#666', fontSize: '14px', marginBottom: '10px' }}>
-              Upcoming Elections
-            </h3>
-            <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#ffc107', margin: 0 }}>
-              {statistics.upcomingElections}
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+              <div>
+                <p style={{ 
+                  color: '#64748b', 
+                  fontSize: '14px', 
+                  marginBottom: '12px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Upcoming Elections
+                </p>
+                <p style={{ 
+                  fontSize: '40px', 
+                  fontWeight: '800', 
+                  color: '#eab308', 
+                  margin: 0,
+                  lineHeight: '1'
+                }}>
+                  {statistics.upcomingElections}
+                </p>
+              </div>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '12px',
+                backgroundColor: '#fefce8',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '28px'
+              }}>
+                ⏳
+              </div>
+            </div>
           </div>
 
           <div style={{
             backgroundColor: 'white',
-            padding: '25px',
-            borderRadius: '10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-            borderLeft: '4px solid #6c757d'
+            padding: '28px',
+            borderRadius: '16px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)',
+            border: '1px solid #e2e8f0',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            cursor: 'default'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)';
           }}>
-            <h3 style={{ color: '#666', fontSize: '14px', marginBottom: '10px' }}>
-              Completed Elections
-            </h3>
-            <p style={{ fontSize: '32px', fontWeight: 'bold', color: '#6c757d', margin: 0 }}>
-              {statistics.completedElections}
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+              <div>
+                <p style={{ 
+                  color: '#64748b', 
+                  fontSize: '14px', 
+                  marginBottom: '12px',
+                  fontWeight: '600',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Completed Elections
+                </p>
+                <p style={{ 
+                  fontSize: '40px', 
+                  fontWeight: '800', 
+                  color: '#64748b', 
+                  margin: 0,
+                  lineHeight: '1'
+                }}>
+                  {statistics.completedElections}
+                </p>
+              </div>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '12px',
+                backgroundColor: '#f1f5f9',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '28px'
+              }}>
+                🏁
+              </div>
+            </div>
           </div>
-        </div>
-
-        {/* Create Election Button */}
-        <div style={{ marginBottom: '30px' }}>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            style={{
-              padding: '12px 30px',
-              backgroundColor: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold'
-            }}
-          >
-            + Create New Election
-          </button>
         </div>
 
         {/* Elections List */}
         <div style={{
           backgroundColor: 'white',
-          padding: '30px',
-          borderRadius: '10px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          padding: '32px',
+          borderRadius: '16px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)',
+          border: '1px solid #e2e8f0'
         }}>
-          <h2 style={{ color: '#1e3a5f', marginBottom: '20px' }}>My Elections</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
+            <h2 style={{ 
+              color: '#1e293b', 
+              margin: 0,
+              fontSize: '24px',
+              fontWeight: '700'
+            }}>
+              My Elections
+            </h2>
+          </div>
 
           {elections.length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: '40px 0' }}>
-              No elections created yet. Click "Create New Election" to get started.
-            </p>
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '60px 20px',
+              color: '#64748b'
+            }}>
+              <div style={{ fontSize: '64px', marginBottom: '16px' }}>🗳️</div>
+              <h3 style={{ 
+                fontSize: '20px', 
+                fontWeight: '600',
+                marginBottom: '8px',
+                color: '#475569'
+              }}>
+                No Elections Yet
+              </h3>
+              <p style={{ fontSize: '16px', marginBottom: '0' }}>
+                Click "Create New Election" in the sidebar to get started.
+              </p>
+            </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {elections.map((election) => (
                 <div
                   key={election.id}
                   style={{
-                    padding: '20px',
-                    border: '1px solid #e0e0e0',
-                    borderRadius: '8px',
-                    transition: 'box-shadow 0.2s',
-                    cursor: 'pointer'
+                    padding: '24px',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                    transition: 'all 0.2s',
+                    backgroundColor: '#fafafa'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                    e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.boxShadow = 'none';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
                   }}
                 >
                   <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'start',
-                    marginBottom: '10px'
+                    marginBottom: '16px',
+                    flexWrap: 'wrap',
+                    gap: '12px'
                   }}>
-                    <div>
-                      <h3 style={{ color: '#1e3a5f', marginBottom: '5px' }}>
+                    <div style={{ flex: 1, minWidth: '250px' }}>
+                      <h3 style={{ 
+                        color: '#1e293b', 
+                        marginBottom: '8px',
+                        fontSize: '20px',
+                        fontWeight: '700'
+                      }}>
                         {election.title}
                       </h3>
-                      <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
+                      <p style={{ 
+                        color: '#64748b', 
+                        fontSize: '13px', 
+                        margin: 0,
+                        fontFamily: 'monospace',
+                        fontWeight: '500'
+                      }}>
                         ID: {election.id}
                       </p>
                     </div>
                     <span style={{
-                      padding: '6px 12px',
-                      borderRadius: '20px',
-                      fontSize: '12px',
-                      fontWeight: 'bold',
+                      padding: '8px 16px',
+                      borderRadius: '24px',
+                      fontSize: '13px',
+                      fontWeight: '700',
+                      letterSpacing: '0.02em',
                       ...getStatusBadgeStyle(getElectionStatus(election))
                     }}>
                       {getElectionStatus(election)}
                     </span>
                   </div>
 
-                  <p style={{ color: '#666', marginBottom: '15px' }}>
+                  <p style={{ 
+                    color: '#475569', 
+                    marginBottom: '20px',
+                    lineHeight: '1.6',
+                    fontSize: '15px'
+                  }}>
                     {election.description}
                   </p>
 
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '15px',
-                    fontSize: '14px',
-                    color: '#666',
-                    marginBottom: '15px'
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                    gap: '20px',
+                    padding: '20px',
+                    backgroundColor: 'white',
+                    borderRadius: '10px',
+                    border: '1px solid #e2e8f0',
+                    marginBottom: '20px'
                   }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div>
-                        <strong>Nomination Start:</strong>
-                        <div>{formatDateTime(election.nominationStartTime)}</div>
+                    <div>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '8px',
+                        marginBottom: '8px'
+                      }}>
+                        <span style={{ fontSize: '18px' }}>📝</span>
+                        <strong style={{ 
+                          color: '#475569',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Nomination Period
+                        </strong>
                       </div>
-                      <div>
-                        <strong>Nomination End:</strong>
-                        <div>{formatDateTime(election.nominationEndTime)}</div>
+                      <div style={{ color: '#1e293b', fontSize: '14px', marginLeft: '26px' }}>
+                        <div style={{ marginBottom: '4px' }}>
+                          <span style={{ fontWeight: '600' }}>Start:</span> {formatDateTime(election.nominationStartTime)}
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: '600' }}>End:</span> {formatDateTime(election.nominationEndTime)}
+                        </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div>
-                        <strong>Voting Start:</strong>
-                        <div>{formatDateTime(election.startTime)}</div>
+                    <div>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '8px',
+                        marginBottom: '8px'
+                      }}>
+                        <span style={{ fontSize: '18px' }}>🗳️</span>
+                        <strong style={{ 
+                          color: '#475569',
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em'
+                        }}>
+                          Voting Period
+                        </strong>
                       </div>
-                      <div>
-                        <strong>Voting End:</strong>
-                        <div>{formatDateTime(election.endTime)}</div>
+                      <div style={{ color: '#1e293b', fontSize: '14px', marginLeft: '26px' }}>
+                        <div style={{ marginBottom: '4px' }}>
+                          <span style={{ fontWeight: '600' }}>Start:</span> {formatDateTime(election.startTime)}
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: '600' }}>End:</span> {formatDateTime(election.endTime)}
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => navigate('/organizer-manage-election', { state: { electionId: election.id } })}
                       style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#1e3a5f',
+                        padding: '12px 24px',
+                        backgroundColor: '#1e293b',
                         color: 'white',
                         border: 'none',
-                        borderRadius: '6px',
+                        borderRadius: '8px',
                         cursor: 'pointer',
                         fontSize: '14px',
-                        fontWeight: '600'
+                        fontWeight: '600',
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#0f172a';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#1e293b';
+                        e.currentTarget.style.transform = 'translateY(0)';
                       }}
                     >
+                      <span>👥</span>
                       Manage Candidates
                     </button>
                     <button
                       onClick={() => navigate('/election-results', { state: { electionId: election.id } })}
                       style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#28a745',
+                        padding: '12px 24px',
+                        backgroundColor: '#16a34a',
                         color: 'white',
                         border: 'none',
-                        borderRadius: '6px',
+                        borderRadius: '8px',
                         cursor: 'pointer',
                         fontSize: '14px',
-                        fontWeight: '600'
+                        fontWeight: '600',
+                        transition: 'all 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#15803d';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#16a34a';
+                        e.currentTarget.style.transform = 'translateY(0)';
                       }}
                     >
+                      <span>📊</span>
                       View Results
                     </button>
                   </div>
@@ -537,232 +806,391 @@ function OrganizerDashboard() {
         </div>
       </div>
 
-      {/* Create Election Modal */}
+      {/* Enhanced Create Election Modal */}
       {showCreateModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1200
-        }}>
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1200,
+            padding: '20px',
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowCreateModal(false);
+            }
+          }}
+        >
           <div style={{
             backgroundColor: 'white',
-            padding: '30px',
-            borderRadius: '10px',
-            maxWidth: '600px',
-            width: '90%',
+            padding: '40px',
+            borderRadius: '20px',
+            maxWidth: '700px',
+            width: '100%',
             maxHeight: '90vh',
-            overflowY: 'auto'
+            overflowY: 'auto',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)'
           }}>
-            <h2 style={{ color: '#1e3a5f', marginBottom: '20px' }}>Create New Election</h2>
+            <div style={{ marginBottom: '32px' }}>
+              <h2 style={{ 
+                color: '#1e293b', 
+                marginBottom: '8px',
+                fontSize: '28px',
+                fontWeight: '800',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <span style={{ fontSize: '32px' }}>🗳️</span>
+                Create New Election
+              </h2>
+              <p style={{ 
+                color: '#64748b',
+                fontSize: '15px',
+                margin: 0
+              }}>
+                Set up your election with nomination and voting periods
+              </p>
+            </div>
 
             <form onSubmit={handleCreateElection}>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                  Election Title *
-                </label>
-                <input
-                  type="text"
-                  value={newElection.title}
-                  onChange={(e) => setNewElection({ ...newElection, title: e.target.value })}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #ddd',
-                    borderRadius: '6px',
-                    fontSize: '14px'
-                  }}
-                  placeholder="e.g., National Presidential Election 2026"
-                />
-              </div>
-
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                  Description *
-                </label>
-                <textarea
-                  value={newElection.description}
-                  onChange={(e) => setNewElection({ ...newElection, description: e.target.value })}
-                  required
-                  rows={4}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    border: '1px solid #ddd',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    resize: 'vertical'
-                  }}
-                  placeholder="Describe the purpose and details of this election..."
-                />
-              </div>
-
-              <h3 style={{ color: '#1e3a5f', fontSize: '16px', marginBottom: '15px', marginTop: '25px' }}>Nomination Period</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    Nomination Start Date *
+              {/* Basic Information */}
+              <div style={{ 
+                marginBottom: '32px',
+                padding: '24px',
+                backgroundColor: '#f8fafc',
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0'
+              }}>
+                <h3 style={{ 
+                  color: '#1e293b',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span>📋</span>
+                  Basic Information
+                </h3>
+                
+                <div style={{ marginBottom: '20px' }}>
+                  <label 
+                    htmlFor="election-title"
+                    style={{ 
+                      display: 'block', 
+                      marginBottom: '8px', 
+                      color: '#334155',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Election Title <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
-                    type="date"
-                    value={newElection.nominationStartDate}
-                    onChange={(e) => setNewElection({ ...newElection, nominationStartDate: e.target.value })}
+                    id="election-title"
+                    type="text"
+                    value={newElection.title}
+                    onChange={(e) => setNewElection({ ...newElection, title: e.target.value })}
                     required
+                    aria-required="true"
                     style={{
                       width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
+                      padding: '12px 16px',
+                      border: '2px solid #e2e8f0',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      transition: 'border-color 0.2s',
+                      outline: 'none',
+                      fontFamily: 'inherit'
                     }}
+                    onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                    placeholder="e.g., National Presidential Election 2026"
                   />
                 </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    Nomination Start Time *
-                  </label>
-                  <input
-                    type="time"
-                    value={newElection.nominationStartTime}
-                    onChange={(e) => setNewElection({ ...newElection, nominationStartTime: e.target.value })}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
-                    }}
-                  />
-                </div>
-              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    Nomination End Date *
+                  <label 
+                    htmlFor="election-description"
+                    style={{ 
+                      display: 'block', 
+                      marginBottom: '8px', 
+                      color: '#334155',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Description <span style={{ color: '#dc2626' }}>*</span>
                   </label>
-                  <input
-                    type="date"
-                    value={newElection.nominationEndDate}
-                    onChange={(e) => setNewElection({ ...newElection, nominationEndDate: e.target.value })}
+                  <textarea
+                    id="election-description"
+                    value={newElection.description}
+                    onChange={(e) => setNewElection({ ...newElection, description: e.target.value })}
                     required
+                    aria-required="true"
+                    rows={4}
                     style={{
                       width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
+                      padding: '12px 16px',
+                      border: '2px solid #e2e8f0',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      resize: 'vertical',
+                      transition: 'border-color 0.2s',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      lineHeight: '1.5'
                     }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    Nomination End Time *
-                  </label>
-                  <input
-                    type="time"
-                    value={newElection.nominationEndTime}
-                    onChange={(e) => setNewElection({ ...newElection, nominationEndTime: e.target.value })}
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
-                    }}
+                    onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                    placeholder="Describe the purpose and details of this election..."
                   />
                 </div>
               </div>
 
-              <h3 style={{ color: '#1e3a5f', fontSize: '16px', marginBottom: '15px', marginTop: '25px' }}>Voting Period</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    Start Date *
+              {/* Timeline Section */}
+              <div style={{ 
+                marginBottom: '32px',
+                padding: '24px',
+                backgroundColor: '#fefce8',
+                borderRadius: '12px',
+                border: '1px solid #fde047'
+              }}>
+                <h3 style={{ 
+                  color: '#854d0e',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span>⏱️</span>
+                  Timeline Overview
+                </h3>
+                <div style={{ 
+                  fontSize: '13px',
+                  color: '#713f12',
+                  lineHeight: '1.6'
+                }}>
+                  <p style={{ margin: '0 0 8px 0' }}>
+                    <strong>1. Nomination Period:</strong> Candidates can apply during this time
+                  </p>
+                  <p style={{ margin: '0 0 8px 0' }}>
+                    <strong>2. Review Period:</strong> Between nomination end and voting start
+                  </p>
+                  <p style={{ margin: '0' }}>
+                    <strong>3. Voting Period:</strong> Approved voters cast their votes
+                  </p>
+                </div>
+              </div>
+
+              {/* Nomination Period */}
+              <div style={{ 
+                marginBottom: '24px',
+                padding: '24px',
+                backgroundColor: '#eff6ff',
+                borderRadius: '12px',
+                border: '1px solid #bfdbfe'
+              }}>
+                <h3 style={{ 
+                  color: '#1e40af',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span>📝</span>
+                  Nomination Period
+                </h3>
+                
+                <div style={{ marginBottom: '16px' }}>
+                  <label 
+                    htmlFor="nomination-start"
+                    style={{ 
+                      display: 'block', 
+                      marginBottom: '8px', 
+                      color: '#1e3a8a',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Start Date & Time <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
-                    type="date"
-                    value={newElection.startDate}
-                    onChange={(e) => setNewElection({ ...newElection, startDate: e.target.value })}
+                    id="nomination-start"
+                    type="datetime-local"
+                    value={newElection.nominationStartDateTime}
+                    onChange={(e) => setNewElection({ ...newElection, nominationStartDateTime: e.target.value })}
                     required
+                    aria-required="true"
                     style={{
                       width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
+                      padding: '12px 16px',
+                      border: '2px solid #bfdbfe',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      transition: 'border-color 0.2s',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      backgroundColor: 'white'
                     }}
+                    onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.target.style.borderColor = '#bfdbfe'}
                   />
                 </div>
+
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    Start Time *
+                  <label 
+                    htmlFor="nomination-end"
+                    style={{ 
+                      display: 'block', 
+                      marginBottom: '8px', 
+                      color: '#1e3a8a',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    End Date & Time <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
-                    type="time"
-                    value={newElection.startTime}
-                    onChange={(e) => setNewElection({ ...newElection, startTime: e.target.value })}
+                    id="nomination-end"
+                    type="datetime-local"
+                    value={newElection.nominationEndDateTime}
+                    onChange={(e) => setNewElection({ ...newElection, nominationEndDateTime: e.target.value })}
                     required
+                    aria-required="true"
                     style={{
                       width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
+                      padding: '12px 16px',
+                      border: '2px solid #bfdbfe',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      transition: 'border-color 0.2s',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      backgroundColor: 'white'
                     }}
+                    onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                    onBlur={(e) => e.target.style.borderColor = '#bfdbfe'}
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '30px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    End Date *
+              {/* Voting Period */}
+              <div style={{ 
+                marginBottom: '32px',
+                padding: '24px',
+                backgroundColor: '#f0fdf4',
+                borderRadius: '12px',
+                border: '1px solid #bbf7d0'
+              }}>
+                <h3 style={{ 
+                  color: '#166534',
+                  fontSize: '16px',
+                  fontWeight: '700',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span>🗳️</span>
+                  Voting Period
+                </h3>
+                
+                <div style={{ marginBottom: '16px' }}>
+                  <label 
+                    htmlFor="voting-start"
+                    style={{ 
+                      display: 'block', 
+                      marginBottom: '8px', 
+                      color: '#14532d',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    Start Date & Time <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
-                    type="date"
-                    value={newElection.endDate}
-                    onChange={(e) => setNewElection({ ...newElection, endDate: e.target.value })}
+                    id="voting-start"
+                    type="datetime-local"
+                    value={newElection.startDateTime}
+                    onChange={(e) => setNewElection({ ...newElection, startDateTime: e.target.value })}
                     required
+                    aria-required="true"
                     style={{
                       width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
+                      padding: '12px 16px',
+                      border: '2px solid #bbf7d0',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      transition: 'border-color 0.2s',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      backgroundColor: 'white'
                     }}
+                    onFocus={(e) => e.target.style.borderColor = '#22c55e'}
+                    onBlur={(e) => e.target.style.borderColor = '#bbf7d0'}
                   />
                 </div>
+
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#333' }}>
-                    End Time *
+                  <label 
+                    htmlFor="voting-end"
+                    style={{ 
+                      display: 'block', 
+                      marginBottom: '8px', 
+                      color: '#14532d',
+                      fontSize: '14px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    End Date & Time <span style={{ color: '#dc2626' }}>*</span>
                   </label>
                   <input
-                    type="time"
-                    value={newElection.endTime}
-                    onChange={(e) => setNewElection({ ...newElection, endTime: e.target.value })}
+                    id="voting-end"
+                    type="datetime-local"
+                    value={newElection.endDateTime}
+                    onChange={(e) => setNewElection({ ...newElection, endDateTime: e.target.value })}
                     required
+                    aria-required="true"
                     style={{
                       width: '100%',
-                      padding: '10px',
-                      border: '1px solid #ddd',
-                      borderRadius: '6px',
-                      fontSize: '14px'
+                      padding: '12px 16px',
+                      border: '2px solid #bbf7d0',
+                      borderRadius: '8px',
+                      fontSize: '15px',
+                      transition: 'border-color 0.2s',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      backgroundColor: 'white'
                     }}
+                    onFocus={(e) => e.target.style.borderColor = '#22c55e'}
+                    onBlur={(e) => e.target.style.borderColor = '#bbf7d0'}
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '15px', justifyContent: 'flex-end' }}>
+              {/* Action Buttons */}
+              <div style={{ 
+                display: 'flex', 
+                gap: '12px', 
+                justifyContent: 'flex-end',
+                borderTop: '1px solid #e2e8f0',
+                paddingTop: '24px'
+              }}>
                 <button
                   type="button"
                   onClick={() => {
@@ -770,24 +1198,30 @@ function OrganizerDashboard() {
                     setNewElection({
                       title: '',
                       description: '',
-                      nominationStartDate: '',
-                      nominationStartTime: '',
-                      nominationEndDate: '',
-                      nominationEndTime: '',
-                      startDate: '',
-                      startTime: '',
-                      endDate: '',
-                      endTime: ''
+                      nominationStartDateTime: '',
+                      nominationEndDateTime: '',
+                      startDateTime: '',
+                      endDateTime: ''
                     });
                   }}
                   style={{
-                    padding: '10px 25px',
-                    backgroundColor: '#6c757d',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
+                    padding: '12px 32px',
+                    backgroundColor: 'white',
+                    color: '#64748b',
+                    border: '2px solid #e2e8f0',
+                    borderRadius: '8px',
                     cursor: 'pointer',
-                    fontSize: '14px'
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f8fafc';
+                    e.currentTarget.style.borderColor = '#cbd5e1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'white';
+                    e.currentTarget.style.borderColor = '#e2e8f0';
                   }}
                 >
                   Cancel
@@ -795,17 +1229,29 @@ function OrganizerDashboard() {
                 <button
                   type="submit"
                   style={{
-                    padding: '10px 25px',
-                    backgroundColor: '#28a745',
+                    padding: '12px 32px',
+                    backgroundColor: '#16a34a',
                     color: 'white',
                     border: 'none',
-                    borderRadius: '6px',
+                    borderRadius: '8px',
                     cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold'
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    transition: 'all 0.2s',
+                    boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.3)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#15803d';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(22, 163, 74, 0.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#16a34a';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(22, 163, 74, 0.3)';
                   }}
                 >
-                  Create Election
+                  ✓ Create Election
                 </button>
               </div>
             </form>

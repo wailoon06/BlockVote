@@ -1,296 +1,631 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-/**
- * @title Optimized BlockVote Contract
- * @notice Gas-optimized version reducing costs by ~50%
- * @dev Key optimizations:
- * - Enums instead of strings (saves ~18,000 gas per registration)
- * - Packed structs (saves ~20,000 gas per registration)
- * - Removed redundant storage
- * - Uint8 for counters and status
- * - Indexed mappings instead of arrays where possible
- */
-contract ContractOptimized {
+// Interface for Groth16Verifier generated from regCheck circuit (Verifier.sol)
+// Public signals order:
+//   [0] ageThreshold
+//   [1] nullifierHash      Poseidon(voterSecret, electionId)
+//   [2] electionId
+//   [3] voterCommitment    Poseidon(voterAddress, voterSecret)
+//   [4] currentYear
+//   [5] currentMonth
+//   [6] currentDay
+//   [7] numCandidates      approved candidate count
+//   [8] choiceCommitment   Poseidon(candidateIndex, voterSecret, electionId)
+interface IVoteVerifier {
+    function verifyProof(
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[9] calldata _pubSignals
+    ) external view returns (bool);
+}
+
+// ── Custom errors (much cheaper in deployed bytecode than require string literals) ──
+error Unauthorized();
+error NotAdmin();
+error NotTrustee();
+error ZeroAddress();
+error AlreadyRegistered();
+error ICAlreadyUsed();
+error EmailAlreadyUsed();
+error NotRegistered();
+error NotPending();
+error NotVerified();
+error NoVerifier();
+error InvalidAge();
+error InvalidElectionId();
+error InvalidCommitment();
+error InvalidDate();
+error ProofFailed();
+error AlreadyVoted();
+error NotInNominationWindow();
+error ElectionNotFound();
+error ElectionNotOpen();
+error EmptyInput();
+error KeyNotSet();
+error AlreadyKeySet();
+error AlreadyCommitted();
+error CandidateCountMismatch();
+error TallyHashMismatch();
+error TallyNotStored();
+error AlreadyPublished();
+error ElectionNotEnded();
+error NoVotesCast();
+error AlreadyProcessed();
+error ElectionAlreadyStarted();
+error InvalidThreshold();
+error InsufficientTrustees();
+error ThresholdTooLarge();
+error TimingError();
+
+contract Contract {
+    // ===== PHASE 1: Paillier & Trustee Management =====
+    struct Trustee {
+        address walletAddress;
+        bytes32 shareCommitment;  // Hash of the secret share
+        bool hasSubmittedCommitment;
+        uint256 registeredAt;
+    }
+
+    // Paillier Public Key Storage
+    string public paillierPublicKeyN;  // Stored as string to handle large numbers
+    bool public isPaillierKeySet;
     
-    // ============ ENUMS ============
+    // Trustee Management
+    address[] public trusteeAddresses;
+    mapping(address => Trustee) public trustees;
+    uint256 public threshold;  // Minimum trustees needed for decryption
+    uint256 public numTrustees;  // Total number of trustees
     
-    enum UserStatus { PENDING, VERIFIED, REJECTED }
+    event PaillierPublicKeySet(string publicKeyN, uint256 timestamp);
+    event TrusteeRegistered(address indexed trusteeAddress, uint256 timestamp);
+    event ShareCommitmentSubmitted(address indexed trusteeAddress, bytes32 commitment, uint256 timestamp);
     
-    // ============ STRUCTS ============
-    
+    // ===== EXISTING STRUCTS =====
     struct Voter {
-        address wallet;           // 20 bytes - slot 0
-        UserStatus status;        // 1 byte  - slot 0 (packed)
-        bool isRegistered;        // 1 byte  - slot 0 (packed)
-        // 10 bytes free in slot 0
-        
-        bytes32 icHash;           // 32 bytes - slot 1
-        bytes32 verificationCode; // 32 bytes - slot 2
-        
-        string name;              // slot 3+
-        string email;             // slot 4+
-        
-        uint40 registeredAt;      // slot N (packed with below)
-        uint40 verifiedAt;        // slot N (packed)
+        address wallet;
+        string name;
+        bytes32 icHash;
+        string email;
+        uint8 status;       // 0=PENDING_VERIFICATION, 1=VERIFIED
+        bytes32 verificationCode;
+        uint256 registeredAt;
+        uint256 verifiedAt;
+        bool isRegistered;
     }
 
     struct Candidate {
-        address wallet;           // 20 bytes - slot 0
-        UserStatus status;        // 1 byte  - slot 0
-        bool isRegistered;        // 1 byte  - slot 0
-        // 10 bytes free in slot 0
-        
-        bytes32 icHash;           // 32 bytes - slot 1
-        bytes32 verificationCode; // 32 bytes - slot 2
-        
-        string name;              // slot 3+
-        string email;             // slot 4+
-        string party;             // slot 5+
-        string manifesto;         // slot 6+
-        
-        uint40 registeredAt;      // slot N
-        uint40 verifiedAt;        // slot N
+        address wallet;
+        string name;
+        bytes32 icHash;
+        string email;
+        string party;
+        string manifesto;
+        uint8 status;       // 0=PENDING_VERIFICATION, 1=VERIFIED
+        bytes32 verificationCode;
+        uint256 registeredAt;
+        uint256 verifiedAt;
+        bool isRegistered;
     }
 
     struct Organizer {
-        address wallet;           // 20 bytes - slot 0
-        UserStatus status;        // 1 byte  - slot 0
-        bool isRegistered;        // 1 byte  - slot 0
-        
-        string organizationName;  // slot 1+
-        string email;             // slot 2+
-        string description;       // slot 3+
-        
-        uint40 registeredAt;      // slot N
+        address wallet;
+        string organizationName;
+        string email;
+        string description;
+        uint8 status;       // 0=PENDING, 1=APPROVED, 2=REJECTED
+        uint256 registeredAt;
+        bool isRegistered;
     }
 
     struct Election {
-        uint64 id;                // 8 bytes - slot 0
-        bool isActive;            // 1 byte  - slot 0
-        // 23 bytes free in slot 0
-        
-        address organizer;        // 20 bytes - slot 1
-        // 12 bytes free in slot 1
-        
-        uint40 nominationStartTime; // 5 bytes - slot 2
-        uint40 nominationEndTime;   // 5 bytes - slot 2
-        uint40 startTime;           // 5 bytes - slot 2
-        uint40 endTime;             // 5 bytes - slot 2
-        uint40 createdAt;           // 5 bytes - slot 2
-        // 7 bytes free in slot 2
-        
-        uint64 totalVotes;        // 8 bytes - slot 3
-        
-        string title;             // slot 4+
-        string description;       // slot 5+
+        uint256 id;
+        string title;
+        string description;
+        address organizer;
+        uint256 nominationStartTime;
+        uint256 nominationEndTime;
+        uint256 startTime;
+        uint256 endTime;
+        bool isActive;
+        uint256 createdAt;
+        uint256 totalVotes;
+        string encryptedTally;  // Homomorphically aggregated encrypted total
+        bool tallyStored;
+        // ===== PHASE 4 =====
+        string decryptedResult;  // JSON-encoded decrypted tally per candidate
+        bool resultsPublished;
     }
     
-    // ============ STATE VARIABLES ============
+    // ===== PHASE 2: Encrypted Voting =====
+    event EncryptedTallyStored(
+        uint256 indexed electionId,
+        string encryptedTally,
+        uint256 totalVotesCounted,
+        uint256 timestamp
+    );
     
-    address public immutable admin;
+    // ===== PHASE 4 Events =====
+    event ResultsPublished(
+        uint256 indexed electionId,
+        string decryptedResult,
+        uint256 timestamp
+    );
     
-    // Counters
-    uint64 private voterCount;
-    uint64 private candidateCount;
-    uint64 private organizerCount;
-    uint64 private electionCounter;
+    // ===== STATE VARIABLES =====
+    address public admin;
+    address[] private voterAddresses;
+    address[] private candidateAddresses;
+    address[] private organizerList;
     
-    // Core mappings
+    uint256 private electionCounter;
+    uint256[] private electionIds;
+    mapping(uint256 => Election) public elections;
+
     mapping(bytes32 => bool) private usedICs;
-    mapping(bytes32 => bool) private usedEmails; // Use keccak256(email)
-    
+    mapping(string => bool) private usedEmails;
+
     mapping(address => Voter) public voters;
     mapping(address => Candidate) public candidates;
     mapping(address => Organizer) public organizers;
-    mapping(uint64 => Election) public elections;
     
-    // Election-specific mappings
-    mapping(uint64 => mapping(address => uint8)) public candidateApplicationStatus; // 0=none, 1=pending, 2=approved, 3=rejected
-    mapping(uint64 => mapping(address => bool)) public hasVoted;
-    mapping(uint64 => mapping(address => uint64)) public candidateVotes;
+    // Election-scoped candidacy (Phase 3 & 4)
+    mapping(uint256 => address[]) private electionCandidateApplicants;
+    mapping(uint256 => mapping(address => uint8)) public candidateApplicationStatus;
+    mapping(uint256 => mapping(address => bool)) public hasVoted;
+    // candidateVotes removed - using encrypted voting instead
     
-    // Index mappings for pagination (replaces arrays)
-    mapping(uint64 => address) public voterByIndex;
-    mapping(uint64 => address) public candidateByIndex;
-    mapping(uint64 => address) public organizerByIndex;
-    mapping(uint64 => uint64) public electionIdByIndex;
+    // ===== ZKP VOTING =====
+    IVoteVerifier public voteVerifier;
+    // Poseidon commitment: H(voterAddress, voterSecret) — stored during voter verification
+    mapping(bytes32 => bool) public voterCommitments;
+    // Nullifier: H(voterSecret, electionId) — prevents double voting anonymously
+    mapping(uint256 => mapping(bytes32 => bool)) public nullifierUsed;
+    // Anonymous vote storage: electionId => nullifier => ipfsCID
+    mapping(uint256 => mapping(bytes32 => string)) private zkpVotes;
+    // Nullifiers list per election (for tally)
+    mapping(uint256 => bytes32[]) private zkpVoteNullifiers;
+    // Choice commitment: electionId => nullifier => choiceCommitment
+    // Binds the encrypted ballot to a proven valid candidateIndex
+    mapping(uint256 => mapping(bytes32 => bytes32)) public voteChoiceCommitments;
+
+    event VoterCommitmentStored(bytes32 indexed commitment, uint256 timestamp);
+    event ZKPVoteCast(
+        uint256 indexed electionId,
+        bytes32 indexed nullifierHash,
+        bytes32 indexed choiceCommitment,
+        uint256 timestamp
+    );
+
+    // ===== PHASE 4: Threshold Decryption State =====
+    mapping(uint256 => mapping(address => bool)) public hasSubmittedDecryptionShare;
+    mapping(uint256 => uint256) public decryptionShareCount;
     
-    // Election candidates tracking
-    mapping(uint64 => mapping(uint64 => address)) public electionCandidateByIndex;
-    mapping(uint64 => uint64) public electionCandidateCount;
-    
-    // ============ EVENTS ============
-    
-    event VoterRegistered(address indexed wallet, string name, uint256 timestamp);
-    event VoterVerified(address indexed wallet, uint256 timestamp);
-    
-    event CandidateRegistered(address indexed wallet, string name, uint256 timestamp);
-    event CandidateVerified(address indexed wallet, uint256 timestamp);
-    
-    event OrganizerRegistered(address indexed wallet, string organizationName, uint256 timestamp);
-    event OrganizerApproved(address indexed wallet, uint256 timestamp);
-    
-    event ElectionCreated(uint64 indexed electionId, address indexed organizer, string title, uint256 timestamp);
-    event CandidateApplied(uint64 indexed electionId, address indexed candidate, uint256 timestamp);
-    event CandidateApprovalUpdated(uint64 indexed electionId, address indexed candidate, uint8 status);
-    event VoteCast(uint64 indexed electionId, address indexed voter, uint256 timestamp);
-    
-    // ============ MODIFIERS ============
-    
+    constructor(address[] memory _trusteeAddresses, uint256 _threshold) {
+        if (_trusteeAddresses.length < 2) revert InsufficientTrustees();
+        if (_threshold < 2) revert InvalidThreshold();
+        if (_threshold > _trusteeAddresses.length) revert ThresholdTooLarge();
+        
+        admin = msg.sender;
+        trusteeAddresses = _trusteeAddresses;
+        threshold = _threshold;
+        numTrustees = _trusteeAddresses.length;
+        
+        // Register trustees
+        for (uint256 i = 0; i < _trusteeAddresses.length; i++) {
+            address trusteeAddr = _trusteeAddresses[i];
+            if (trusteeAddr == address(0)) revert ZeroAddress();
+            
+            trustees[trusteeAddr] = Trustee({
+                walletAddress: trusteeAddr,
+                shareCommitment: bytes32(0),
+                hasSubmittedCommitment: false,
+                registeredAt: block.timestamp
+            });
+            
+            emit TrusteeRegistered(trusteeAddr, block.timestamp);
+        }
+    }
+
     modifier onlyAdmin() {
-        require(msg.sender == admin, "!admin");
+        if (msg.sender != admin) revert NotAdmin();
         _;
     }
     
-    // ============ CONSTRUCTOR ============
-    
-    constructor() {
-        admin = msg.sender;
+    modifier onlyTrustee() {
+        if (trustees[msg.sender].walletAddress == address(0)) revert NotTrustee();
+        _;
     }
     
-    // ============ VOTER FUNCTIONS ============
+    // Set ZKP Vote Verifier contract (VoteWithICAgeCheck verifier)
+    function setVoteVerifier(address _voteVerifier) public onlyAdmin {
+        if (_voteVerifier == address(0)) revert ZeroAddress();
+        voteVerifier = IVoteVerifier(_voteVerifier);
+    }
+
+    // ===== PHASE 1: Paillier & Trustee Functions =====
     
-    function registerVoter(
-        string calldata _name,
-        string calldata _ic,
-        string calldata _email,
-        string calldata _verificationCode
-    ) external {
-        require(!voters[msg.sender].isRegistered, "Already registered");
+    /**
+     * @dev Set the Paillier public key (can only be set once by admin)
+     * @param _publicKeyN The public key modulus N as a string
+     */
+    function setPaillierPublicKey(string memory _publicKeyN) public onlyAdmin {
+        if (isPaillierKeySet) revert AlreadyKeySet();
+        if (bytes(_publicKeyN).length == 0) revert EmptyInput();
         
+        paillierPublicKeyN = _publicKeyN;
+        isPaillierKeySet = true;
+        
+        emit PaillierPublicKeySet(_publicKeyN, block.timestamp);
+    }
+    
+    /**
+     * @dev Submit a commitment (hash) of a trustee's secret share.
+     *      Can be called by the trustee themselves, or by admin (e.g. during automated setup).
+     * @param _trustee    Address of the trustee whose commitment is being submitted
+     * @param _commitment Hash of the secret share (keccak256 of share data)
+     */
+    function submitShareCommitment(address _trustee, bytes32 _commitment) public {
+        if (msg.sender != admin && msg.sender != _trustee) revert Unauthorized();
+        if (trustees[_trustee].walletAddress == address(0)) revert NotTrustee();
+        if (trustees[_trustee].hasSubmittedCommitment) revert AlreadyCommitted();
+        if (_commitment == bytes32(0)) revert EmptyInput();
+
+        trustees[_trustee].shareCommitment = _commitment;
+        trustees[_trustee].hasSubmittedCommitment = true;
+
+        emit ShareCommitmentSubmitted(_trustee, _commitment, block.timestamp);
+    }
+    
+    /**
+     * @dev Get Paillier public key
+     */
+    function getPaillierPublicKey() public view returns (string memory) {
+        if (!isPaillierKeySet) revert KeyNotSet();
+        return paillierPublicKeyN;
+    }
+    
+    /**
+     * @dev Get list of all trustee addresses
+     */
+    function getTrusteeAddresses() public view returns (address[] memory) {
+        return trusteeAddresses;
+    }
+    
+    /**
+     * @dev Check if all trustees have submitted their commitments
+     */
+    function allTrusteesCommitted() public view returns (bool) {
+        for (uint256 i = 0; i < trusteeAddresses.length; i++) {
+            if (!trustees[trusteeAddresses[i]].hasSubmittedCommitment) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    /**
+     * @dev Get trustee information
+     */
+    function getTrusteeInfo(address _trustee) public view returns (
+        address walletAddress,
+        bytes32 shareCommitment,
+        bool hasSubmittedCommitment,
+        uint256 registeredAt
+    ) {
+        Trustee memory t = trustees[_trustee];
+        return (
+            t.walletAddress,
+            t.shareCommitment,
+            t.hasSubmittedCommitment,
+            t.registeredAt
+        );
+    }
+    
+    // ===== PHASE 2: Encrypted Voting Functions =====
+    // (votes now stored anonymously by ZKP nullifier — see getZKPVote / getZKPVoteNullifiers)
+
+    function storeEncryptedTally(
+        uint256 _electionId,
+        string memory _encryptedTally,
+        bytes32 _tallyInputHash   // keccak256(abi.encodePacked(cid_0, cid_1, ...)) in nullifier order
+    ) public {
+        if (elections[_electionId].id == 0) revert ElectionNotFound();
+        if (msg.sender != admin && msg.sender != elections[_electionId].organizer) revert Unauthorized();
+        if (elections[_electionId].tallyStored) revert AlreadyPublished();
+        if (bytes(_encryptedTally).length == 0) revert EmptyInput();
+        if (block.timestamp <= elections[_electionId].endTime) revert ElectionNotEnded();
+        
+        uint256 voteCount = zkpVoteNullifiers[_electionId].length;
+        if (voteCount == 0) revert NoVotesCast();
+
+        bytes memory packed;
+        for (uint256 i = 0; i < voteCount; i++) {
+            bytes32 nullifier = zkpVoteNullifiers[_electionId][i];
+            packed = abi.encodePacked(packed, zkpVotes[_electionId][nullifier]);
+        }
+        if (keccak256(packed) != _tallyInputHash) revert TallyHashMismatch();
+        
+        elections[_electionId].encryptedTally = _encryptedTally;
+        elections[_electionId].tallyStored = true;
+        elections[_electionId].totalVotes = voteCount;
+        
+        emit EncryptedTallyStored(_electionId, _encryptedTally, voteCount, block.timestamp);
+    }
+
+    function getEncryptedTally(uint256 _electionId) public view returns (
+        string memory encryptedTally, uint256 totalVotes, bool tallyStored
+    ) {
+        if (elections[_electionId].id == 0) revert ElectionNotFound();
+        return (elections[_electionId].encryptedTally, elections[_electionId].totalVotes, elections[_electionId].tallyStored);
+    }
+    
+    event VoterRegistered(
+        address indexed wallet,
+        string name,
+        string email,
+        uint256 timestamp
+    );
+    
+    event CandidateRegistered(
+        address indexed wallet,
+        string name,
+        string email,
+        uint256 timestamp
+    );
+
+    event OrganizerRegistered(
+        address indexed applicant,
+        string organizationName,
+        uint256 timestamp
+    );
+
+    event VoterVerified(
+        address indexed wallet,
+        uint256 timestamp
+    );
+
+    event CandidateVerified(
+        address indexed wallet,
+        uint256 timestamp
+    );
+
+    event OrganizerVerified(
+        address indexed applicant,
+        uint256 timestamp
+    );
+
+    event OrganizerRejected(
+        address indexed applicant,
+        uint256 timestamp
+    );
+
+    event ElectionCreated(
+        uint256 indexed electionId,
+        string title,
+        address indexed organizer,
+        uint256 nominationStartTime,
+        uint256 nominationEndTime,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 timestamp
+    );
+
+    event CandidateApplied(
+        uint256 indexed electionId,
+        address indexed candidateWallet,
+        uint256 timestamp
+    );
+
+    event CandidateApproved(
+        uint256 indexed electionId,
+        address indexed candidateWallet,
+        address indexed approver,
+        uint256 timestamp
+    );
+
+    event CandidateRejected(
+        uint256 indexed electionId,
+        address indexed candidateWallet,
+        address indexed rejector,
+        uint256 timestamp
+    );
+
+    event VoteCast(
+        uint256 indexed electionId,
+        address indexed voter,
+        address indexed candidate,
+        uint256 timestamp
+    );
+
+    // Common functions
+    function isICRegistered(string memory _ic) public view returns (bool) {
         bytes32 icHash = keccak256(abi.encodePacked(_ic));
-        bytes32 emailHash = keccak256(abi.encodePacked(_email));
-        bytes32 verificationCodeHash = keccak256(abi.encodePacked(_verificationCode));
+        return usedICs[icHash];
+    }
+    
+    function isEmailRegistered(string memory _email) public view returns (bool) {
+        return usedEmails[_email];
+    }
+    
+    //////////////////
+    // Voter Logics //
+    //////////////////
+    function registerVoter(
+        string memory _name,
+        string memory _ic,
+        string memory _email
+    ) public returns (bytes32) {
+        if (voters[msg.sender].isRegistered) revert AlreadyRegistered();
+
+        bytes32 icHash = keccak256(abi.encodePacked(_ic));
+        if (usedICs[icHash]) revert ICAlreadyUsed();
+        if (usedEmails[_email]) revert EmailAlreadyUsed();
         
-        require(!usedICs[icHash], "IC used");
-        require(!usedEmails[emailHash], "Email used");
-        
-        usedICs[icHash] = true;
-        usedEmails[emailHash] = true;
-        
+        bytes32 verificationCode = keccak256(
+            abi.encodePacked(
+                msg.sender,
+                _name,
+                _ic,
+                _email,
+                block.timestamp
+            )
+        );
         voters[msg.sender] = Voter({
             wallet: msg.sender,
             name: _name,
             icHash: icHash,
             email: _email,
-            status: UserStatus.PENDING,
-            verificationCode: verificationCodeHash,
-            registeredAt: uint40(block.timestamp),
+            status: 0,
+            verificationCode: verificationCode,
+            registeredAt: block.timestamp,
             verifiedAt: 0,
             isRegistered: true
         });
+        voterAddresses.push(msg.sender);
+        usedICs[icHash] = true;
+        usedEmails[_email] = true;
         
-        voterByIndex[voterCount] = msg.sender;
-        voterCount++;
+        emit VoterRegistered(msg.sender, _name, _email, block.timestamp);
         
-        emit VoterRegistered(msg.sender, _name, block.timestamp);
+        return verificationCode;
     }
     
-    function verifyVoter(address _voter) external onlyAdmin {
-        require(voters[_voter].isRegistered, "!registered");
-        require(voters[_voter].status == UserStatus.PENDING, "!pending");
-        
-        voters[_voter].status = UserStatus.VERIFIED;
-        voters[_voter].verifiedAt = uint40(block.timestamp);
-        
-        emit VoterVerified(_voter, block.timestamp);
+    // ZKP-based verification for voters (uses regCheck circuit — Verifier.sol)
+    // Public signals (9 total): [ageThreshold, nullifierHash, electionId, voterCommitment,
+    //                  currentYear, currentMonth, currentDay, numCandidates, choiceCommitment]
+    // electionId must be 0 (registration sentinel); numCandidates=1, candidateIndex=0 (dummy).
+    function verifyVoterWithZKP(
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[9] calldata _pubSignals
+    ) public {
+        if (!voters[msg.sender].isRegistered) revert NotRegistered();
+        if (voters[msg.sender].status != 0) revert NotPending();
+        if (address(voteVerifier) == address(0)) revert NoVerifier();
+
+        if (_pubSignals[0] != 18) revert InvalidAge();
+        if (_pubSignals[2] != 0) revert InvalidElectionId();
+        if (_pubSignals[3] == 0) revert InvalidCommitment();
+
+        (uint256 blockYear, uint256 blockMonth, uint256 blockDay) = _timestampToDate(block.timestamp);
+        if (_pubSignals[4] != blockYear) revert InvalidDate();
+        if (_pubSignals[5] != blockMonth) revert InvalidDate();
+        if (_pubSignals[6] != blockDay) revert InvalidDate();
+
+        if (!voteVerifier.verifyProof(_pA, _pB, _pC, _pubSignals)) revert ProofFailed();
+
+        // Store the voter's Poseidon commitment on-chain
+        // This enables anonymous voting without linking address to election participation
+        bytes32 commitment = bytes32(_pubSignals[3]);
+        if (!voterCommitments[commitment]) {
+            voterCommitments[commitment] = true;
+            emit VoterCommitmentStored(commitment, block.timestamp);
+        }
+
+        // Mark voter as VERIFIED
+        voters[msg.sender].status = 1;
+        voters[msg.sender].verifiedAt = block.timestamp;
+
+        emit VoterVerified(msg.sender, block.timestamp);
+    }
+
+    function isVoterRegistered(address _wallet) public view returns (bool) {
+        return voters[_wallet].isRegistered;
+    }
+
+    // Combined function to check if a wallet is registered as voter or candidate
+    function isWalletRegistered(address _wallet) public view returns (bool) {
+        return voters[_wallet].isRegistered || candidates[_wallet].isRegistered;
+    }
+
+    function getAllVoterAddresses() public view returns (address[] memory) {
+        return voterAddresses;
+    }
+
+    function getTotalRegisteredVoters() public view returns (uint256) {
+        return voterAddresses.length;
     }
     
-    function rejectVoter(address _voter) external onlyAdmin {
-        require(voters[_voter].isRegistered, "!registered");
-        require(voters[_voter].status == UserStatus.PENDING, "!pending");
-        
-        voters[_voter].status = UserStatus.REJECTED;
-        
-        emit VoterVerified(_voter, block.timestamp);
-    }
-    
-    function isVoterRegistered(address _voter) external view returns (bool) {
-        return voters[_voter].isRegistered;
-    }
-    
-    function getVoterInfo(address _voter) external view returns (
-        address wallet,
+    function getVoterInfo(address _wallet) public view returns (
         string memory name,
         string memory email,
-        UserStatus status,
+        string memory status,
         uint256 registeredAt,
         uint256 verifiedAt
     ) {
-        Voter memory voter = voters[_voter];
+        if (!voters[_wallet].isRegistered) revert NotRegistered();
+        
+        Voter memory voter = voters[_wallet];
         return (
-            voter.wallet,
             voter.name,
             voter.email,
-            voter.status,
+            voter.status == 1 ? "VERIFIED" : "PENDING_VERIFICATION",
             voter.registeredAt,
             voter.verifiedAt
         );
     }
-    
-    function getTotalVoters() external view returns (uint64) {
-        return voterCount;
-    }
-    
-    function getVotersBatch(uint64 _start, uint64 _count) external view returns (
-        address[] memory wallets,
-        string[] memory names,
-        string[] memory emails,
-        UserStatus[] memory statuses,
-        uint256[] memory registeredAts
-    ) {
-        require(_start < voterCount, "!start");
+
+    // function getVotersBatch(uint256 _start, uint256 _count) public view returns (
+    //     address[] memory wallets,
+    //     string[] memory names,
+    //     string[] memory emails,
+    //     string[] memory statuses,
+    //     uint256[] memory registeredAts
+    // ) {
+    //     require(_start < voterAddresses.length, "!start");
         
-        uint64 end = _start + _count;
-        if (end > voterCount) {
-            end = voterCount;
-        }
+    //     uint256 end = _start + _count;
+    //     if (end > voterAddresses.length) {
+    //         end = voterAddresses.length;
+    //     }
         
-        uint64 resultCount = end - _start;
+    //     uint256 resultCount = end - _start;
         
-        wallets = new address[](resultCount);
-        names = new string[](resultCount);
-        emails = new string[](resultCount);
-        statuses = new UserStatus[](resultCount);
-        registeredAts = new uint256[](resultCount);
+    //     wallets = new address[](resultCount);
+    //     names = new string[](resultCount);
+    //     emails = new string[](resultCount);
+    //     statuses = new string[](resultCount);
+    //     registeredAts = new uint256[](resultCount);
         
-        for (uint64 i = 0; i < resultCount; i++) {
-            address voterAddr = voterByIndex[_start + i];
-            Voter memory voter = voters[voterAddr];
+    //     for (uint256 i = 0; i < resultCount; i++) {
+    //         address voterAddress = voterAddresses[_start + i];
+    //         Voter memory voter = voters[voterAddress];
             
-            wallets[i] = voter.wallet;
-            names[i] = voter.name;
-            emails[i] = voter.email;
-            statuses[i] = voter.status;
-            registeredAts[i] = voter.registeredAt;
-        }
+    //         wallets[i] = voter.wallet;
+    //         names[i] = voter.name;
+    //         emails[i] = voter.email;
+    //         statuses[i] = voter.status;
+    //         registeredAts[i] = voter.registeredAt;
+    //     }
         
-        return (wallets, names, emails, statuses, registeredAts);
-    }
-    
-    // ============ CANDIDATE FUNCTIONS ============
+    //     return (wallets, names, emails, statuses, registeredAts);
+    // }
+
     
     function registerCandidate(
-        string calldata _name,
-        string calldata _ic,
-        string calldata _email,
-        string calldata _party,
-        string calldata _manifesto,
-        string calldata _verificationCode
-    ) external {
-        require(!candidates[msg.sender].isRegistered, "Already registered");
-        
+        string memory _name,
+        string memory _ic,
+        string memory _email,
+        string memory _party,
+        string memory _manifesto
+    ) public returns (bytes32) {
+        if (candidates[msg.sender].isRegistered) revert AlreadyRegistered();
         bytes32 icHash = keccak256(abi.encodePacked(_ic));
-        bytes32 emailHash = keccak256(abi.encodePacked(_email));
-        bytes32 verificationCodeHash = keccak256(abi.encodePacked(_verificationCode));
+        if (usedICs[icHash]) revert ICAlreadyUsed();
+        if (usedEmails[_email]) revert EmailAlreadyUsed();
         
-        require(!usedICs[icHash], "IC used");
-        require(!usedEmails[emailHash], "Email used");
-        
-        usedICs[icHash] = true;
-        usedEmails[emailHash] = true;
-        
+        bytes32 verificationCode = keccak256(
+            abi.encodePacked(
+                msg.sender,
+                _name,
+                _ic,
+                _email,
+                block.timestamp
+            )
+        );
         candidates[msg.sender] = Candidate({
             wallet: msg.sender,
             name: _name,
@@ -298,322 +633,267 @@ contract ContractOptimized {
             email: _email,
             party: _party,
             manifesto: _manifesto,
-            status: UserStatus.PENDING,
-            verificationCode: verificationCodeHash,
-            registeredAt: uint40(block.timestamp),
+            status: 0,
+            verificationCode: verificationCode,
+            registeredAt: block.timestamp,
             verifiedAt: 0,
             isRegistered: true
         });
+        candidateAddresses.push(msg.sender);
+        usedICs[icHash] = true;
+        usedEmails[_email] = true;
         
-        candidateByIndex[candidateCount] = msg.sender;
-        candidateCount++;
+        emit CandidateRegistered(msg.sender, _name, _email, block.timestamp);
         
-        emit CandidateRegistered(msg.sender, _name, block.timestamp);
+        return verificationCode;
     }
     
-    function verifyCandidate(address _candidate) external onlyAdmin {
-        require(candidates[_candidate].isRegistered, "!registered");
-        require(candidates[_candidate].status == UserStatus.PENDING, "!pending");
-        
-        candidates[_candidate].status = UserStatus.VERIFIED;
-        candidates[_candidate].verifiedAt = uint40(block.timestamp);
-        
-        emit CandidateVerified(_candidate, block.timestamp);
+    // ZKP-based verification for candidates (same regCheck circuit, electionId=0)
+    // numCandidates=1, candidateIndex=0 used as dummy values during registration.
+    function verifyCandidateWithZKP(
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[9] calldata _pubSignals
+    ) public {
+        if (!candidates[msg.sender].isRegistered) revert NotRegistered();
+        if (candidates[msg.sender].status != 0) revert NotPending();
+        if (address(voteVerifier) == address(0)) revert NoVerifier();
+
+        if (_pubSignals[0] != 18) revert InvalidAge();
+        if (_pubSignals[2] != 0) revert InvalidElectionId();
+        if (_pubSignals[3] == 0) revert InvalidCommitment();
+
+        (uint256 blockYear, uint256 blockMonth, uint256 blockDay) = _timestampToDate(block.timestamp);
+        if (_pubSignals[4] != blockYear) revert InvalidDate();
+        if (_pubSignals[5] != blockMonth) revert InvalidDate();
+        if (_pubSignals[6] != blockDay) revert InvalidDate();
+
+        if (!voteVerifier.verifyProof(_pA, _pB, _pC, _pubSignals)) revert ProofFailed();
+
+        // Mark as verified
+        candidates[msg.sender].status = 1;
+        candidates[msg.sender].verifiedAt = block.timestamp;
+
+        emit CandidateVerified(msg.sender, block.timestamp);
+    }
+
+    function isCandidateRegistered(address _wallet) public view returns (bool) {
+        return candidates[_wallet].isRegistered;
     }
     
-    function rejectCandidate(address _candidate) external onlyAdmin {
-        require(candidates[_candidate].isRegistered, "!registered");
-        require(candidates[_candidate].status == UserStatus.PENDING, "!pending");
-        
-        candidates[_candidate].status = UserStatus.REJECTED;
-        
-        emit CandidateVerified(_candidate, block.timestamp);
+    function getAllCandidateAddresses() public view returns (address[] memory) {
+        return candidateAddresses;
     }
     
-    function isCandidateRegistered(address _candidate) external view returns (bool) {
-        return candidates[_candidate].isRegistered;
+    function getTotalRegisteredCandidates() public view returns (uint256) {
+        return candidateAddresses.length;
     }
     
-    function getCandidateInfo(address _candidate) external view returns (
-        address wallet,
+    function getCandidateInfo(address _wallet) public view returns (
         string memory name,
         string memory email,
         string memory party,
         string memory manifesto,
-        UserStatus status,
+        string memory status,
         uint256 registeredAt,
         uint256 verifiedAt
     ) {
-        Candidate memory candidate = candidates[_candidate];
+        if (!candidates[_wallet].isRegistered) revert NotRegistered();
+        
+        Candidate memory candidate = candidates[_wallet];
         return (
-            candidate.wallet,
             candidate.name,
             candidate.email,
             candidate.party,
             candidate.manifesto,
-            candidate.status,
+            candidate.status == 1 ? "VERIFIED" : "PENDING_VERIFICATION",
             candidate.registeredAt,
             candidate.verifiedAt
         );
     }
-    
-    function getTotalCandidates() external view returns (uint64) {
-        return candidateCount;
-    }
-    
-    function getCandidatesBatch(uint64 _start, uint64 _count) external view returns (
-        address[] memory wallets,
-        string[] memory names,
-        string[] memory emails,
-        string[] memory parties,
-        UserStatus[] memory statuses,
-        uint256[] memory registeredAts
-    ) {
-        require(_start < candidateCount, "!start");
+
+    // function getCandidatesBatch(uint256 _start, uint256 _count) public view returns (
+    //     address[] memory wallets,
+    //     string[] memory names,
+    //     string[] memory emails,
+    //     string[] memory statuses,
+    //     uint256[] memory registeredAts
+    // ) {
+    //     require(_start < candidateAddresses.length, "!start");
         
-        uint64 end = _start + _count;
-        if (end > candidateCount) {
-            end = candidateCount;
-        }
+    //     uint256 end = _start + _count;
+    //     if (end > candidateAddresses.length) {
+    //         end = candidateAddresses.length;
+    //     }
         
-        uint64 resultCount = end - _start;
+    //     uint256 resultCount = end - _start;
         
-        wallets = new address[](resultCount);
-        names = new string[](resultCount);
-        emails = new string[](resultCount);
-        parties = new string[](resultCount);
-        statuses = new UserStatus[](resultCount);
-        registeredAts = new uint256[](resultCount);
+    //     wallets = new address[](resultCount);
+    //     names = new string[](resultCount);
+    //     emails = new string[](resultCount);
+    //     statuses = new string[](resultCount);
+    //     registeredAts = new uint256[](resultCount);
         
-        for (uint64 i = 0; i < resultCount; i++) {
-            address candidateAddr = candidateByIndex[_start + i];
-            Candidate memory candidate = candidates[candidateAddr];
+    //     for (uint256 i = 0; i < resultCount; i++) {
+    //         address candidateAddress = candidateAddresses[_start + i];
+    //         Candidate memory candidate = candidates[candidateAddress];
             
-            wallets[i] = candidate.wallet;
-            names[i] = candidate.name;
-            emails[i] = candidate.email;
-            parties[i] = candidate.party;
-            statuses[i] = candidate.status;
-            registeredAts[i] = candidate.registeredAt;
-        }
+    //         wallets[i] = candidate.wallet;
+    //         names[i] = candidate.name;
+    //         emails[i] = candidate.email;
+    //         statuses[i] = candidate.status;
+    //         registeredAts[i] = candidate.registeredAt;
+    //     }
         
-        return (wallets, names, emails, parties, statuses, registeredAts);
-    }
-    
-    // ============ ORGANIZER FUNCTIONS ============
-    
+    //     return (wallets, names, emails, statuses, registeredAts);
+    // }
+
+
     function registerOrganizer(
-        string calldata _organizationName,
-        string calldata _email,
-        string calldata _description
-    ) external {
-        require(!organizers[msg.sender].isRegistered, "Already registered");
-        
-        bytes32 emailHash = keccak256(abi.encodePacked(_email));
-        require(!usedEmails[emailHash], "Email used");
-        
-        usedEmails[emailHash] = true;
+        string memory _organizationName,
+        string memory _email,
+        string memory _description
+    ) public returns (bool) {
+        if (organizers[msg.sender].isRegistered) revert AlreadyRegistered();
+        if (bytes(_organizationName).length == 0) revert EmptyInput();
+        if (bytes(_email).length == 0) revert EmptyInput();
         
         organizers[msg.sender] = Organizer({
             wallet: msg.sender,
             organizationName: _organizationName,
             email: _email,
             description: _description,
-            status: UserStatus.PENDING,
-            registeredAt: uint40(block.timestamp),
+            status: 0,
+            registeredAt: block.timestamp,
             isRegistered: true
         });
         
-        organizerByIndex[organizerCount] = msg.sender;
-        organizerCount++;
+        organizerList.push(msg.sender);
         
         emit OrganizerRegistered(msg.sender, _organizationName, block.timestamp);
+        
+        return true;
     }
-    
-    function approveOrganizer(address _organizer) external onlyAdmin {
-        require(organizers[_organizer].isRegistered, "!registered");
-        require(organizers[_organizer].status == UserStatus.PENDING, "!pending");
+
+    function verifyOrganizer(address _applicant) public onlyAdmin returns (bool) {
+        if (!organizers[_applicant].isRegistered) revert NotRegistered();
+        if (organizers[_applicant].status != 0) revert AlreadyProcessed();
         
-        organizers[_organizer].status = UserStatus.VERIFIED;
+        organizers[_applicant].status = 1;
         
-        emit OrganizerApproved(_organizer, block.timestamp);
+        emit OrganizerVerified(_applicant, block.timestamp);
+        
+        return true;
     }
-    
-    function rejectOrganizer(address _organizer) external onlyAdmin {
-        require(organizers[_organizer].isRegistered, "!registered");
-        require(organizers[_organizer].status == UserStatus.PENDING, "!pending");
-        
-        organizers[_organizer].status = UserStatus.REJECTED;
-        
-        emit OrganizerApproved(_organizer, block.timestamp);
-    }
-    
-    function getOrganizerInfo(address _organizer) external view returns (
-        address wallet,
+
+    function getOrganizerInfo(address _applicant) public view returns (
         string memory organizationName,
         string memory email,
         string memory description,
-        UserStatus status,
+        string memory status,
         uint256 registeredAt
     ) {
-        Organizer memory organizer = organizers[_organizer];
+        if (!organizers[_applicant].isRegistered) revert NotRegistered();
+        
+        Organizer memory org = organizers[_applicant];
+        string memory statusStr = org.status == 1 ? "APPROVED" : (org.status == 2 ? "REJECTED" : "PENDING");
         return (
-            organizer.wallet,
-            organizer.organizationName,
-            organizer.email,
-            organizer.description,
-            organizer.status,
-            organizer.registeredAt
+            org.organizationName,
+            org.email,
+            org.description,
+            statusStr,
+            org.registeredAt
         );
     }
-    
-    function getTotalOrganizers() external view returns (uint64) {
-        return organizerCount;
+
+    function getAllOrganizers() public view returns (address[] memory) {
+        return organizerList;
     }
-    
-    function getOrganizersBatch(uint64 _start, uint64 _count) external view returns (
-        address[] memory wallets,
-        string[] memory organizationNames,
-        string[] memory emails,
-        UserStatus[] memory statuses,
-        uint256[] memory registeredAts
-    ) {
-        require(_start < organizerCount, "!start");
-        
-        uint64 end = _start + _count;
-        if (end > organizerCount) {
-            end = organizerCount;
+
+    function getPendingOrganizers() public view returns (address[] memory) {
+        uint256 pendingCount = 0;
+        for (uint256 i = 0; i < organizerList.length; i++) {
+            if (organizers[organizerList[i]].status == 0) {
+                pendingCount++;
+            }
         }
         
-        uint64 resultCount = end - _start;
+        address[] memory pending = new address[](pendingCount);
+        uint256 currentIndex = 0;
         
-        wallets = new address[](resultCount);
-        organizationNames = new string[](resultCount);
-        emails = new string[](resultCount);
-        statuses = new UserStatus[](resultCount);
-        registeredAts = new uint256[](resultCount);
-        
-        for (uint64 i = 0; i < resultCount; i++) {
-            address organizerAddr = organizerByIndex[_start + i];
-            Organizer memory organizer = organizers[organizerAddr];
-            
-            wallets[i] = organizer.wallet;
-            organizationNames[i] = organizer.organizationName;
-            emails[i] = organizer.email;
-            statuses[i] = organizer.status;
-            registeredAts[i] = organizer.registeredAt;
+        for (uint256 i = 0; i < organizerList.length; i++) {
+            if (organizers[organizerList[i]].status == 0) {
+                pending[currentIndex] = organizerList[i];
+                currentIndex++;
+            }
         }
         
-        return (wallets, organizationNames, emails, statuses, registeredAts);
+        return pending;
     }
-    
-    // ============ ELECTION FUNCTIONS ============
-    
+
+    function isOrganizer(address _address) public view returns (bool) {
+        return organizers[_address].isRegistered && organizers[_address].status == 1;
+    }
+
+    function isOrganizerRegistered(address _address) public view returns (bool) {
+        return organizers[_address].isRegistered;
+    }
+
+    function isAdmin(address _address) public view returns (bool) {
+        return _address == admin;
+    }
+
     function createElection(
-        string calldata _title,
-        string calldata _description,
+        string memory _title,
+        string memory _description,
         uint256 _nominationStartTime,
         uint256 _nominationEndTime,
         uint256 _startTime,
         uint256 _endTime
-    ) external {
-        require(organizers[msg.sender].isRegistered, "!organizer");
-        require(organizers[msg.sender].status == UserStatus.VERIFIED, "!verified");
-        require(_nominationStartTime < _nominationEndTime, "Invalid nomination period");
-        require(_nominationEndTime < _startTime, "Nomination must end before voting");
-        require(_startTime < _endTime, "Invalid voting period");
-        require(block.timestamp < _nominationStartTime, "Start time passed");
-        
+    ) public returns (uint256) {
+        if (!isOrganizer(msg.sender)) revert Unauthorized();
+        if (bytes(_title).length == 0) revert EmptyInput();
+        if (_nominationStartTime <= block.timestamp) revert TimingError();
+        if (_nominationEndTime <= _nominationStartTime) revert TimingError();
+        if (_startTime <= _nominationEndTime) revert TimingError();
+        if (_endTime <= _startTime) revert TimingError();
         electionCounter++;
-        
-        elections[electionCounter] = Election({
-            id: electionCounter,
+        uint256 newElectionId = electionCounter;
+        elections[newElectionId] = Election({
+            id: newElectionId,
             title: _title,
             description: _description,
             organizer: msg.sender,
-            nominationStartTime: uint40(_nominationStartTime),
-            nominationEndTime: uint40(_nominationEndTime),
-            startTime: uint40(_startTime),
-            endTime: uint40(_endTime),
+            nominationStartTime: _nominationStartTime,
+            nominationEndTime: _nominationEndTime,
+            startTime: _startTime,
+            endTime: _endTime,
             isActive: true,
-            createdAt: uint40(block.timestamp),
-            totalVotes: 0
+            createdAt: block.timestamp,
+            totalVotes: 0,
+            encryptedTally: "",
+            tallyStored: false,
+            decryptedResult: "",
+            resultsPublished: false
         });
+        electionIds.push(newElectionId);
         
-        electionIdByIndex[electionCounter - 1] = electionCounter;
+        emit ElectionCreated(
+            newElectionId,
+            _title,
+            msg.sender,
+            _nominationStartTime,
+            _nominationEndTime,
+            _startTime,
+            _endTime,
+            block.timestamp
+        );
         
-        emit ElectionCreated(electionCounter, msg.sender, _title, block.timestamp);
+        return newElectionId;
     }
     
-    function applyToElection(uint64 _electionId) external {
-        require(candidates[msg.sender].isRegistered, "!candidate");
-        require(candidates[msg.sender].status == UserStatus.VERIFIED, "!verified");
-        require(elections[_electionId].id != 0, "!election");
-        
-        Election memory election = elections[_electionId];
-        require(block.timestamp >= election.nominationStartTime, "Nomination !started");
-        require(block.timestamp <= election.nominationEndTime, "Nomination ended");
-        require(candidateApplicationStatus[_electionId][msg.sender] == 0, "Already applied");
-        
-        candidateApplicationStatus[_electionId][msg.sender] = 1; // Pending
-        
-        uint64 index = electionCandidateCount[_electionId];
-        electionCandidateByIndex[_electionId][index] = msg.sender;
-        electionCandidateCount[_electionId]++;
-        
-        emit CandidateApplied(_electionId, msg.sender, block.timestamp);
-    }
-    
-    function approveCandidateApplication(uint64 _electionId, address _candidate) external {
-        require(elections[_electionId].organizer == msg.sender, "!organizer");
-        require(candidateApplicationStatus[_electionId][_candidate] == 1, "!pending");
-        
-        candidateApplicationStatus[_electionId][_candidate] = 2; // Approved
-        
-        emit CandidateApprovalUpdated(_electionId, _candidate, 2);
-    }
-    
-    function rejectCandidateApplication(uint64 _electionId, address _candidate) external {
-        require(elections[_electionId].organizer == msg.sender, "!organizer");
-        require(candidateApplicationStatus[_electionId][_candidate] == 1, "!pending");
-        
-        candidateApplicationStatus[_electionId][_candidate] = 3; // Rejected
-        
-        emit CandidateApprovalUpdated(_electionId, _candidate, 3);
-    }
-    
-    function vote(uint64 _electionId, address _candidate) external {
-        require(voters[msg.sender].isRegistered, "!voter");
-        require(voters[msg.sender].status == UserStatus.VERIFIED, "!verified");
-        require(elections[_electionId].id != 0, "!election");
-        require(!hasVoted[_electionId][msg.sender], "Already voted");
-        
-        Election memory election = elections[_electionId];
-        require(block.timestamp >= election.startTime, "Voting !started");
-        require(block.timestamp <= election.endTime, "Voting ended");
-        require(candidateApplicationStatus[_electionId][_candidate] == 2, "Candidate !approved");
-        
-        hasVoted[_electionId][msg.sender] = true;
-        candidateVotes[_electionId][_candidate]++;
-        elections[_electionId].totalVotes++;
-        
-        emit VoteCast(_electionId, msg.sender, block.timestamp);
-    }
-    
-    function hasVoterVoted(uint64 _electionId, address _voter) external view returns (bool) {
-        return hasVoted[_electionId][_voter];
-    }
-    
-    function getCandidateVotes(uint64 _electionId, address _candidate) external view returns (uint64) {
-        return candidateVotes[_electionId][_candidate];
-    }
-    
-    function getElectionTotalVotes(uint64 _electionId) external view returns (uint64) {
-        return elections[_electionId].totalVotes;
-    }
-    
-    function getElectionInfo(uint64 _electionId) external view returns (
-        uint64 id,
+    function getElectionInfo(uint256 _electionId) public view returns (
         string memory title,
         string memory description,
         address organizer,
@@ -624,9 +904,10 @@ contract ContractOptimized {
         bool isActive,
         uint256 createdAt
     ) {
+        if (_electionId == 0 || _electionId > electionCounter) revert ElectionNotFound();
+        
         Election memory election = elections[_electionId];
         return (
-            election.id,
             election.title,
             election.description,
             election.organizer,
@@ -639,34 +920,303 @@ contract ContractOptimized {
         );
     }
     
-    function getTotalElections() external view returns (uint64) {
+    function getAllElectionIds() public view returns (uint256[] memory) {
+        return electionIds;
+    }
+    
+    function getTotalElections() public view returns (uint256) {
         return electionCounter;
     }
     
-    function getApprovedCandidates(uint64 _electionId) external view returns (address[] memory) {
-        uint64 totalCandidates = electionCandidateCount[_electionId];
-        uint64 approvedCount = 0;
-        
-        // Count approved candidates
-        for (uint64 i = 0; i < totalCandidates; i++) {
-            address candidate = electionCandidateByIndex[_electionId][i];
-            if (candidateApplicationStatus[_electionId][candidate] == 2) {
-                approvedCount++;
+    function getElectionsByOrganizer(address _organizer) public view returns (uint256[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < electionIds.length; i++) {
+            if (elections[electionIds[i]].organizer == _organizer) {
+                count++;
+            }
+        }
+        uint256[] memory organizerElections = new uint256[](count);
+        uint256 currentIndex = 0;
+        for (uint256 i = 0; i < electionIds.length; i++) {
+            if (elections[electionIds[i]].organizer == _organizer) {
+                organizerElections[currentIndex] = electionIds[i];
+                currentIndex++;
             }
         }
         
-        // Build result array
-        address[] memory approved = new address[](approvedCount);
-        uint64 index = 0;
+        return organizerElections;
+    }
+    
+    function getActiveElections() public view returns (uint256[] memory) {
+        uint256 count = 0;
+        for (uint256 i = 0; i < electionIds.length; i++) {
+            Election memory election = elections[electionIds[i]];
+            if (election.isActive && 
+                block.timestamp >= election.startTime && 
+                block.timestamp <= election.endTime) {
+                count++;
+            }
+        }
+        uint256[] memory activeElections = new uint256[](count);
+        uint256 currentIndex = 0;
+        for (uint256 i = 0; i < electionIds.length; i++) {
+            Election memory election = elections[electionIds[i]];
+            if (election.isActive && 
+                block.timestamp >= election.startTime && 
+                block.timestamp <= election.endTime) {
+                activeElections[currentIndex] = electionIds[i];
+                currentIndex++;
+            }
+        }
         
-        for (uint64 i = 0; i < totalCandidates; i++) {
-            address candidate = electionCandidateByIndex[_electionId][i];
-            if (candidateApplicationStatus[_electionId][candidate] == 2) {
-                approved[index] = candidate;
-                index++;
+        return activeElections;
+    }
+
+    function applyToElection(uint256 _electionId) public returns (bool) {
+        if (_electionId > electionCounter) revert ElectionNotFound();
+        Election memory election = elections[_electionId];
+        if (
+            block.timestamp < election.nominationStartTime || 
+            block.timestamp > election.nominationEndTime
+        ) revert NotInNominationWindow();
+        if (!candidates[msg.sender].isRegistered) revert NotRegistered();
+        if (candidates[msg.sender].status != 1) revert NotVerified();
+        if (candidateApplicationStatus[_electionId][msg.sender] != 0) revert AlreadyRegistered();
+        candidateApplicationStatus[_electionId][msg.sender] = 1;
+        electionCandidateApplicants[_electionId].push(msg.sender);
+        
+        emit CandidateApplied(_electionId, msg.sender, block.timestamp);
+        
+        return true;
+    }
+    
+    function getElectionCandidateApplicants(uint256 _electionId) public view returns (address[] memory) {
+        if (_electionId > electionCounter) revert ElectionNotFound();
+        return electionCandidateApplicants[_electionId];
+    }
+    
+    function approveCandidateForElection(uint256 _electionId, address _candidateWallet) public returns (bool) {
+        if (_electionId > electionCounter) revert ElectionNotFound();
+        Election memory election = elections[_electionId];
+        if (msg.sender != election.organizer && msg.sender != admin) revert Unauthorized();
+        if (candidateApplicationStatus[_electionId][_candidateWallet] != 1) revert NotPending();
+        if (block.timestamp >= election.startTime) revert ElectionAlreadyStarted();
+        candidateApplicationStatus[_electionId][_candidateWallet] = 2;
+        
+        emit CandidateApproved(_electionId, _candidateWallet, msg.sender, block.timestamp);
+        
+        return true;
+    }
+    
+    function rejectCandidateForElection(uint256 _electionId, address _candidateWallet) public returns (bool) {
+        if (_electionId > electionCounter) revert ElectionNotFound();
+        Election memory election = elections[_electionId];
+        if (msg.sender != election.organizer && msg.sender != admin) revert Unauthorized();
+        if (candidateApplicationStatus[_electionId][_candidateWallet] != 1) revert NotPending();
+        if (block.timestamp >= election.startTime) revert ElectionAlreadyStarted();
+        candidateApplicationStatus[_electionId][_candidateWallet] = 3;
+        
+        emit CandidateRejected(_electionId, _candidateWallet, msg.sender, block.timestamp);
+        
+        return true;
+    }
+    
+    function getApprovedCandidates(uint256 _electionId) public view returns (address[] memory) {
+        if (_electionId > electionCounter) revert ElectionNotFound();
+        address[] memory applicants = electionCandidateApplicants[_electionId];
+        uint256 approvedCount = 0;
+        for (uint256 i = 0; i < applicants.length; i++) {
+            if (candidateApplicationStatus[_electionId][applicants[i]] == 2) {
+                approvedCount++;
+            }
+        }
+        address[] memory approved = new address[](approvedCount);
+        uint256 currentIndex = 0;
+        for (uint256 i = 0; i < applicants.length; i++) {
+            if (candidateApplicationStatus[_electionId][applicants[i]] == 2) {
+                approved[currentIndex] = applicants[i];
+                currentIndex++;
             }
         }
         
         return approved;
     }
+    
+    /**
+     * @dev Cast an encrypted vote using ZKP — proves eligibility without revealing identity.
+     *
+     * Public signals order (must match VoteWithICAgeCheck circuit):
+     *   _pubSignals[0] = ageThreshold
+     *   _pubSignals[1] = nullifierHash   (H(voterSecret, electionId) — prevents double voting)
+     *   _pubSignals[2] = electionId
+     *   _pubSignals[3] = voterCommitment (H(voterAddress, voterSecret) — proves registration)
+     *   _pubSignals[4] = currentYear
+     *   _pubSignals[5] = currentMonth
+     *   _pubSignals[6] = currentDay
+     *   _pubSignals[7] = numCandidates    (approved candidate count)
+     *   _pubSignals[8] = choiceCommitment (Poseidon(candidateIndex, voterSecret, electionId))
+     *
+     * @param _electionId  Election to vote in
+     * @param _ipfsCID     IPFS CID of the encrypted ballot
+     * @param _pA          ZKP proof component A
+     * @param _pB          ZKP proof component B
+     * @param _pC          ZKP proof component C
+     * @param _pubSignals  9 public signals from the circuit
+     */
+    function vote(
+        uint256 _electionId,
+        string memory _ipfsCID,
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[9] calldata _pubSignals
+    ) public returns (bool) {
+        if (_electionId > electionCounter) revert ElectionNotFound();
+        Election storage election = elections[_electionId];
+        if (block.timestamp < election.startTime || block.timestamp > election.endTime) revert ElectionNotOpen();
+        if (bytes(_ipfsCID).length == 0) revert EmptyInput();
+        if (!isPaillierKeySet) revert KeyNotSet();
+        if (address(voteVerifier) == address(0)) revert NoVerifier();
+
+        if (_pubSignals[2] != _electionId) revert InvalidElectionId();
+        if (_pubSignals[0] != 18) revert InvalidAge();
+
+        (uint256 blockYear, uint256 blockMonth, uint256 blockDay) = _timestampToDate(block.timestamp);
+        if (_pubSignals[4] != blockYear) revert InvalidDate();
+        if (_pubSignals[5] != blockMonth) revert InvalidDate();
+        if (_pubSignals[6] != blockDay) revert InvalidDate();
+
+        if (_pubSignals[7] != getApprovedCandidates(_electionId).length) revert CandidateCountMismatch();
+
+        bytes32 nullifier = bytes32(_pubSignals[1]);
+        if (nullifierUsed[_electionId][nullifier]) revert AlreadyVoted();
+
+        bytes32 commitment = bytes32(_pubSignals[3]);
+        if (!voterCommitments[commitment]) revert NotRegistered();
+
+        if (!voteVerifier.verifyProof(_pA, _pB, _pC, _pubSignals)) revert ProofFailed();
+
+        // Record vote anonymously (keyed by nullifier, NOT address)
+        bytes32 choiceCommitment = bytes32(_pubSignals[8]);
+        nullifierUsed[_electionId][nullifier] = true;
+        zkpVotes[_electionId][nullifier] = _ipfsCID;
+        voteChoiceCommitments[_electionId][nullifier] = choiceCommitment;
+        zkpVoteNullifiers[_electionId].push(nullifier);
+        election.totalVotes++;
+
+        emit ZKPVoteCast(_electionId, nullifier, choiceCommitment, block.timestamp);
+
+        return true;
+    }
+
+    /**
+     * @dev Convert a Unix timestamp to (year, month, day).
+     *      Used to validate the date embedded in the ZKP public signals.
+     */
+    function _timestampToDate(uint256 timestamp)
+        internal
+        pure
+        returns (uint256 year, uint256 month, uint256 day)
+    {
+        uint256 z = timestamp / 86400 + 719468;
+        uint256 era = z / 146097;
+        uint256 doe = z - era * 146097;
+        uint256 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        year = yoe + era * 400;
+        uint256 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        uint256 mp = (5 * doy + 2) / 153;
+        day = doy - (153 * mp + 2) / 5 + 1;
+        month = mp < 10 ? mp + 3 : mp - 9;
+        if (month <= 2) year++;
+    }
+
+    /**
+     * @dev Get the IPFS CID of an anonymous ZKP vote by its nullifier.
+     */
+    function getZKPVote(uint256 _electionId, bytes32 _nullifier)
+        public
+        view
+        returns (string memory)
+    {
+        return zkpVotes[_electionId][_nullifier];
+    }
+
+    /**
+     * @dev Get all nullifiers (anonymous voter tokens) for an election — used for tally.
+     */
+    function getZKPVoteNullifiers(uint256 _electionId)
+        public
+        view
+        returns (bytes32[] memory)
+    {
+        return zkpVoteNullifiers[_electionId];
+    }
+
+    /**
+     * @dev Get the choice commitment stored for a given nullifier.
+     *      Voter can verify their ballot by recomputing
+     *      Poseidon(candidateIndex, voterSecret, electionId) client-side
+     *      and comparing against this value — without revealing their choice on-chain.
+     */
+    function getChoiceCommitment(uint256 _electionId, bytes32 _nullifier)
+        public
+        view
+        returns (bytes32)
+    {
+        return voteChoiceCommitments[_electionId][_nullifier];
+    }
+
+    /**
+     * @dev Check whether a nullifier has already been used in an election.
+     *      Caller computes nullifier = Poseidon(voterSecret, electionId) client-side.
+     *      Wallet address is never stored — voting is fully anonymous.
+     */
+    function hasVoterVoted(uint256 _electionId, bytes32 _nullifier) public view returns (bool) {
+        return nullifierUsed[_electionId][_nullifier];
+    }
+
+    
+    function getElectionTotalVotes(uint256 _electionId) public view returns (uint256) {
+        if (_electionId > electionCounter) revert ElectionNotFound();
+        return elections[_electionId].totalVotes;
+    }
+    
+    // ===== PHASE 4: Threshold Decryption & Results =====
+    
+    /**
+     * @dev Publish the decrypted election results on-chain.
+     *      Requires that enough decryption shares have been registered.
+     * @param _electionId The election ID
+     * @param _decryptedResult JSON-encoded decrypted tally (e.g. per-candidate totals)
+     */
+    function publishResults(uint256 _electionId, string memory _decryptedResult) public {
+        if (elections[_electionId].id == 0) revert ElectionNotFound();
+        if (msg.sender != admin && msg.sender != elections[_electionId].organizer) revert Unauthorized();
+        if (!elections[_electionId].tallyStored) revert TallyNotStored();
+        if (elections[_electionId].resultsPublished) revert AlreadyPublished();
+        if (bytes(_decryptedResult).length == 0) revert EmptyInput();
+        
+        elections[_electionId].decryptedResult = _decryptedResult;
+        elections[_electionId].resultsPublished = true;
+        
+        emit ResultsPublished(_electionId, _decryptedResult, block.timestamp);
+    }
+    
+    /**
+     * @dev Get the published results for an election
+     * @param _electionId The election ID
+     */
+    function getResults(uint256 _electionId) public view returns (
+        string memory decryptedResult,
+        bool resultsPublished,
+        uint256 shareCount
+    ) {
+        if (elections[_electionId].id == 0) revert ElectionNotFound();
+        return (
+            elections[_electionId].decryptedResult,
+            elections[_electionId].resultsPublished,
+            decryptionShareCount[_electionId]
+        );
+    }
+    
 }

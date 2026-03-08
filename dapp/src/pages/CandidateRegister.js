@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
+import { normalizeIC } from '../utils/icHashUtils';
 import Navbar from '../components/Navbar';
 import MessageAlert from '../components/MessageAlert';
 
@@ -88,8 +89,11 @@ export default function CandidateRegister() {
 
       const { deployedContract } = await getDeployedContract();
 
+      // Normalize IC format before sending to contract
+      const normalizedIC = normalizeIC(formData.ic);
+
       const result = await deployedContract.methods
-        .registerCandidate(formData.name, formData.ic, formData.email, formData.party, formData.manifesto)
+        .registerCandidate(formData.name, normalizedIC, formData.email, formData.party, formData.manifesto)
         .send({ from: walletAddress });
 
       setMessage('Registration successful! Redirecting to verification...');
@@ -232,7 +236,7 @@ export default function CandidateRegister() {
                 value={formData.ic}
                 onChange={handleInputChange}
                 required
-                placeholder="Enter your IC number"
+                placeholder="e.g., 990101-01-1234"
                 style={{
                   width: '100%',
                   padding: '0.875rem',
@@ -251,7 +255,7 @@ export default function CandidateRegister() {
                 display: 'block',
                 marginTop: '0.5rem'
               }}>
-                🔒 Your IC will be hashed for privacy protection
+                🔒 Your IC will be hashed and stored securely. During verification, we'll validate that your IC photo matches this number.
               </small>
             </div>
 

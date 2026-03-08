@@ -225,7 +225,16 @@ export default function CandidateElections() {
   };
 
   const formatDateTime = (timestamp) => {
-    return new Date(timestamp * 1000).toLocaleString();
+    const date = new Date(timestamp * 1000);
+    const options = { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    };
+    return date.toLocaleString('en-US', options);
   };
 
   const handleLogout = () => {
@@ -236,17 +245,35 @@ export default function CandidateElections() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ 
+        minHeight: '100vh', 
+        backgroundColor: '#f8fafc', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center' 
+      }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⏳</div>
-          <div style={{ fontSize: '1.25rem', color: '#6c757d' }}>Loading elections...</div>
+          <div style={{ 
+            fontSize: '48px', 
+            marginBottom: '16px',
+            animation: 'pulse 1.5s ease-in-out infinite'
+          }}>
+            ⏳
+          </div>
+          <div style={{ 
+            fontSize: '18px', 
+            color: '#64748b',
+            fontWeight: '600'
+          }}>
+            Loading elections...
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="App">
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <Navbar 
         title="BlockVote - Available Elections"
         walletAddress={walletAddress}
@@ -254,61 +281,99 @@ export default function CandidateElections() {
         userRole="candidate"
       />
 
-      <div className="page-container" style={{ paddingTop: 'calc(70px + 2.5rem)' }}>
-        <div style={{ marginBottom: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+      <div style={{ 
+        maxWidth: '1400px',
+        margin: '0 auto',
+        padding: '40px 30px',
+        paddingTop: 'calc(70px + 40px)'
+      }}>
+        <div style={{ 
+          marginBottom: '32px', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'start', 
+          flexWrap: 'wrap', 
+          gap: '20px' 
+        }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '2rem' }}>📊</span>
-              <h1 className="card-title" style={{ fontSize: '2rem', margin: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '48px' }}>📊</span>
+              <h1 style={{ 
+                fontSize: '32px', 
+                fontWeight: '800',
+                color: '#1e293b',
+                margin: 0,
+                letterSpacing: '-0.02em'
+              }}>
                 Available Elections
               </h1>
             </div>
-            <p className="card-subtitle" style={{ fontSize: '1.05rem' }}>
+            <p style={{ 
+              fontSize: '16px',
+              color: '#64748b',
+              margin: 0,
+              lineHeight: '1.6'
+            }}>
               Apply to participate as a candidate in upcoming elections
             </p>
           </div>
           <button
             onClick={() => navigate('/candidate-my-elections', { state: { walletAddress } })}
-            className="btn btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', whiteSpace: 'nowrap' }}
+            style={{
+              padding: '12px 24px',
+              backgroundColor: '#2563eb',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '15px',
+              fontWeight: '600',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.2s',
+              boxShadow: '0 4px 6px -1px rgba(37, 99, 235, 0.3)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#1d4ed8';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+              e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(37, 99, 235, 0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#2563eb';
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(37, 99, 235, 0.3)';
+            }}
           >
-            📋 My Applications
+            <span>📋</span>
+            My Applications
           </button>
         </div>
 
         <MessageAlert message={message} type={messageType} onClose={() => setMessage('')} />
 
-        {candidateInfo && (
-          <div className="card" style={{ marginBottom: '2rem', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white', border: 'none' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                  <span style={{ fontSize: '2rem' }}>🏅</span>
-                  <h3 className="card-title" style={{ color: 'white', margin: 0 }}>Your Candidate Profile</h3>
-                </div>
-                <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1.5rem' }}>
-                  <div>
-                    <div className="form-label" style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '0.25rem' }}>Name</div>
-                    <div style={{ fontWeight: '600', fontSize: '1.1rem' }}>{candidateInfo.name}</div>
-                  </div>
-                  <div>
-                    <div className="form-label" style={{ color: 'rgba(255,255,255,0.8)', marginBottom: '0.25rem' }}>Party</div>
-                    <div style={{ fontWeight: '600', fontSize: '1.1rem' }}>{candidateInfo.party}</div>
-                  </div>
-                </div>
-              </div>
-              <span className="badge badge-success" style={{ backgroundColor: '#d1fae5', color: '#065f46', fontSize: '0.875rem', padding: '0.5rem 1rem' }}>
-                ✓ {candidateInfo.status}
-              </span>
-            </div>
-          </div>
-        )}
-
         {elections.length === 0 ? (
-          <div className="card" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
+          <div style={{ 
+            padding: '4rem 2rem', 
+            textAlign: 'center',
+            background: 'white',
+            borderRadius: '16px',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}>
             <div style={{ fontSize: '5rem', marginBottom: '1.5rem', opacity: 0.3 }}>📦</div>
-            <h3 className="card-title" style={{ fontSize: '1.5rem', marginBottom: '0.75rem' }}>No Elections Available</h3>
-            <p className="card-subtitle" style={{ fontSize: '1rem' }}>There are currently no elections available for candidate applications.</p>
+            <h3 style={{ 
+              fontSize: '1.5rem', 
+              marginBottom: '0.75rem',
+              color: '#1e293b',
+              fontWeight: '600'
+            }}>No Elections Available</h3>
+            <p style={{ 
+              fontSize: '1rem',
+              color: '#64748b',
+              margin: 0
+            }}>There are currently no elections available for candidate applications.</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: '1.5rem' }}>
@@ -318,29 +383,66 @@ export default function CandidateElections() {
               return (
                 <div
                   key={election.id}
-                  className="card"
                   style={{
+                    background: 'white',
+                    borderRadius: '16px',
+                    padding: '2rem',
+                    border: '1px solid #e2e8f0',
                     borderLeft: election.applicationStatus === 2 ? '4px solid #10b981' : 
                                election.applicationStatus === 1 ? '4px solid #f59e0b' :
-                               election.applicationStatus === 3 ? '4px solid #ef4444' : '4px solid #2563EB'
+                               election.applicationStatus === 3 ? '4px solid #ef4444' : '4px solid #2563EB',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                    transition: 'all 0.3s ease',
+                    cursor: 'default'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                    e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
-                  <div className="card-header">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.75rem', gap: '1rem' }}>
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.75rem', gap: '1rem', flexWrap: 'wrap' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                          <h3 className="card-title" style={{ fontSize: '1.5rem', margin: 0 }}>
+                          <h3 style={{ 
+                            fontSize: '1.5rem', 
+                            margin: 0,
+                            color: '#1e293b',
+                            fontWeight: '600'
+                          }}>
                             {election.title}
                           </h3>
-                          <span className="badge" style={{ fontSize: '0.7rem' }}>ID: {election.id}</span>
+                          <span style={{ 
+                            fontSize: '0.7rem',
+                            padding: '0.25rem 0.75rem',
+                            background: '#e2e8f0',
+                            color: '#475569',
+                            borderRadius: '9999px',
+                            fontWeight: '500'
+                          }}>ID: {election.id}</span>
                         </div>
-                        <p className="card-subtitle" style={{ margin: 0 }}>{election.description}</p>
+                        <p style={{ margin: 0, color: '#64748b', fontSize: '0.95rem' }}>{election.description}</p>
                       </div>
                       <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column', alignItems: 'flex-end' }}>
                         <span style={getApplicationStatusStyle(election.applicationStatus)}>
                           {getApplicationStatusText(election.applicationStatus)}
                         </span>
-                        <span className={`badge ${nominationStatus === 'Open' ? 'badge-success' : nominationStatus === 'Upcoming' ? 'badge-warning' : 'badge-info'}`}>
+                        <span style={{
+                          padding: '0.375rem 0.875rem',
+                          fontSize: '0.875rem',
+                          fontWeight: '500',
+                          borderRadius: '8px',
+                          background: nominationStatus === 'Open' ? '#dcfce7' : 
+                                     nominationStatus === 'Upcoming' ? '#fef3c7' : '#dbeafe',
+                          color: nominationStatus === 'Open' ? '#166534' : 
+                                nominationStatus === 'Upcoming' ? '#92400e' : '#1e40af',
+                          border: nominationStatus === 'Open' ? '1px solid #bbf7d0' : 
+                                 nominationStatus === 'Upcoming' ? '1px solid #fde68a' : '1px solid #bfdbfe'
+                        }}>
                           📅 {nominationStatus}
                         </span>
                       </div>
@@ -354,24 +456,44 @@ export default function CandidateElections() {
                     gap: '1rem',
                     marginBottom: '1.5rem'
                   }}>
-                    <div className="card" style={{ padding: '1.25rem', background: '#eff6ff' }}>
+                    <div style={{ 
+                      padding: '1.25rem', 
+                      background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                      borderRadius: '12px',
+                      border: '1px solid #bfdbfe'
+                    }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
                         <span style={{ fontSize: '1.5rem' }}>📝</span>
-                        <div className="form-label" style={{ margin: 0, fontWeight: '600' }}>Nomination Period</div>
+                        <div style={{ 
+                          margin: 0, 
+                          fontWeight: '600',
+                          color: '#1e40af',
+                          fontSize: '0.95rem'
+                        }}>Nomination Period</div>
                       </div>
-                      <div style={{ fontSize: '0.875rem', color: '#475569' }}>
+                      <div style={{ fontSize: '0.875rem', color: '#475569', marginBottom: '0.25rem' }}>
                         <strong>Start:</strong> {formatDateTime(election.nominationStartTime)}
                       </div>
                       <div style={{ fontSize: '0.875rem', color: '#475569' }}>
                         <strong>End:</strong> {formatDateTime(election.nominationEndTime)}
                       </div>
                     </div>
-                    <div className="card" style={{ padding: '1.25rem', background: '#f0fdf4' }}>
+                    <div style={{ 
+                      padding: '1.25rem', 
+                      background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+                      borderRadius: '12px',
+                      border: '1px solid #bbf7d0'
+                    }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
                         <span style={{ fontSize: '1.5rem' }}>🗳️</span>
-                        <div className="form-label" style={{ margin: 0, fontWeight: '600' }}>Voting Period</div>
+                        <div style={{ 
+                          margin: 0, 
+                          fontWeight: '600',
+                          color: '#166534',
+                          fontSize: '0.95rem'
+                        }}>Voting Period</div>
                       </div>
-                      <div style={{ fontSize: '0.875rem', color: '#475569' }}>
+                      <div style={{ fontSize: '0.875rem', color: '#475569', marginBottom: '0.25rem' }}>
                         <strong>Start:</strong> {formatDateTime(election.startTime)}
                       </div>
                       <div style={{ fontSize: '0.875rem', color: '#475569' }}>
@@ -386,11 +508,30 @@ export default function CandidateElections() {
                       <button
                         onClick={() => handleApply(election.id)}
                         disabled={applying === election.id}
-                        className="btn btn-primary"
                         style={{
                           width: '100%',
-                          opacity: applying === election.id ? 0.7 : 1,
-                          cursor: applying === election.id ? 'not-allowed' : 'pointer'
+                          padding: '0.875rem 1.5rem',
+                          background: applying === election.id ? '#94a3b8' : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontSize: '1rem',
+                          fontWeight: '600',
+                          cursor: applying === election.id ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.3s ease',
+                          boxShadow: applying === election.id ? 'none' : '0 2px 8px rgba(37, 99, 235, 0.3)'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (applying !== election.id) {
+                            e.currentTarget.style.transform = 'translateY(-2px)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.4)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (applying !== election.id) {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(37, 99, 235, 0.3)';
+                          }
                         }}
                       >
                         {applying === election.id ? '⏳ Submitting Application...' : '✍️ Apply to This Election'}
@@ -398,31 +539,71 @@ export default function CandidateElections() {
                     )}
                     
                     {election.applicationStatus === 1 && (
-                      <div className="alert alert-warning">
+                      <div style={{
+                        padding: '1rem 1.25rem',
+                        background: '#fef3c7',
+                        border: '1px solid #fde68a',
+                        borderRadius: '12px',
+                        color: '#92400e',
+                        fontSize: '0.95rem',
+                        fontWeight: '500'
+                      }}>
                         ⏳ Your application is pending organizer approval
                       </div>
                     )}
                     
                     {election.applicationStatus === 2 && (
-                      <div className="alert alert-success">
+                      <div style={{
+                        padding: '1rem 1.25rem',
+                        background: '#dcfce7',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '12px',
+                        color: '#166534',
+                        fontSize: '0.95rem',
+                        fontWeight: '500'
+                      }}>
                         ✓ Your application has been approved! You are a candidate in this election.
                       </div>
                     )}
                     
                     {election.applicationStatus === 3 && (
-                      <div className="alert alert-error">
+                      <div style={{
+                        padding: '1rem 1.25rem',
+                        background: '#fee2e2',
+                        border: '1px solid #fecaca',
+                        borderRadius: '12px',
+                        color: '#991b1b',
+                        fontSize: '0.95rem',
+                        fontWeight: '500'
+                      }}>
                         ✗ Your application was rejected
                       </div>
                     )}
 
                     {!canApply(election) && election.applicationStatus === 0 && nominationStatus === 'Closed' && (
-                      <div className="alert alert-info">
+                      <div style={{
+                        padding: '1rem 1.25rem',
+                        background: '#dbeafe',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '12px',
+                        color: '#1e40af',
+                        fontSize: '0.95rem',
+                        fontWeight: '500'
+                      }}>
                         🔒 Nomination period has ended
                       </div>
                     )}
 
                     {!canApply(election) && election.applicationStatus === 0 && nominationStatus === 'Upcoming' && (
-                      <div className="alert alert-info">
+                      <div style={{
+                        padding: '1rem 1.25rem',
+                        background: '#dbeafe',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '12px',
+                        color: '#1e40af',
+                        fontSize: '0.95rem',
+                        fontWeight: '500'
+                      }}>
                         📅 Nomination period will begin on {formatDateTime(election.nominationStartTime)}
                       </div>
                     )}

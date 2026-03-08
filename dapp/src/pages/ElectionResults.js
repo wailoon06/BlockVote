@@ -14,6 +14,8 @@ export default function ElectionResults() {
   const [walletAddress, setWalletAddress] = useState('');
   const [electionInfo, setElectionInfo] = useState(null);
   const [candidates, setCandidates] = useState([]);
+  const [totalVotes, setTotalVotes] = useState(0);
+  const [phase4Result, setPhase4Result] = useState(null);
   const [message, setMessage] = useState({ text: '', type: '' });
   const [loading, setLoading] = useState(true);
 
@@ -81,24 +83,42 @@ export default function ElectionResults() {
       });
 
       // Get total votes
-      const totalVotes = await contractInstance.methods.getElectionTotalVotes(electionId).call();
+      const totalVotesBN = await contractInstance.methods.getElectionTotalVotes(electionId).call();
+      setTotalVotes(Number(totalVotesBN));
+
+      // Check if Phase 4 results are published
+      let phase4Result = null;
+      try {
+        const res = await contractInstance.methods.getResults(electionId).call();
+        if (res.resultsPublished) {
+          phase4Result = JSON.parse(res.decryptedResult);
+          setPhase4Result(phase4Result);
+        }
+      } catch (_) {}
 
       // Get approved candidates
       const approvedCandidates = await contractInstance.methods.getApprovedCandidates(electionId).call();
 
-      // Get candidate details and votes
+      // Get candidate details
       const candidateData = [];
       for (let candidateAddr of approvedCandidates) {
         const candidateInfo = await contractInstance.methods.getCandidateInfo(candidateAddr).call();
-        const votes = await contractInstance.methods.getCandidateVotes(electionId, candidateAddr).call();
-        
         candidateData.push({
           address: candidateAddr,
           name: candidateInfo.name,
           party: candidateInfo.party,
           manifesto: candidateInfo.manifesto,
-          votes: Number(votes),
-          percentage: totalVotes > 0 ? ((Number(votes) / Number(totalVotes)) * 100).toFixed(2) : 0
+          votes: 0,
+          percentage: 0
+        });
+      }
+
+      // If Phase 4 results are published, apply per-candidate vote counts
+      if (phase4Result?.per_candidate_votes) {
+        const tv = phase4Result.total_votes || Number(totalVotesBN) || 1;
+        candidateData.forEach((c, idx) => {
+          c.votes = phase4Result.per_candidate_votes[String(idx)] || 0;
+          c.percentage = tv > 0 ? Math.round((c.votes / tv) * 100) : 0;
         });
       }
 
@@ -130,7 +150,16 @@ export default function ElectionResults() {
   };
 
   const formatDateTime = (timestamp) => {
-    return new Date(timestamp * 1000).toLocaleString();
+    const date = new Date(timestamp * 1000);
+    const options = { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    };
+    return date.toLocaleString('en-US', options);
   };
 
   const handleLogout = () => {
@@ -138,196 +167,642 @@ export default function ElectionResults() {
   };
 
   const getTotalVotes = () => {
-    return candidates.reduce((sum, candidate) => sum + candidate.votes, 0);
+    return totalVotes;
   };
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ 
+        minHeight: '100vh', 
+        backgroundColor: '#f8fafc', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center' 
+      }}>
         <div style={{ textAlign: 'center' }}>
-          <h2>Loading election results...</h2>
+          <div style={{ 
+            fontSize: '48px', 
+            marginBottom: '16px',
+            animation: 'pulse 1.5s ease-in-out infinite'
+          }}>
+            📊
+          </div>
+          <h2 style={{
+            fontSize: '18px',
+            color: '#64748b',
+            fontWeight: '600',
+            margin: 0
+          }}>
+            Loading election results...
+          </h2>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="App">
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <Navbar walletAddress={walletAddress} userRole="organizer" onLogout={handleLogout} />
       <Sidebar userRole="organizer" />
       <MessageAlert message={message.text} type={message.type} />
 
-      <div className="page-container" style={{ marginLeft: '90px', paddingTop: 'calc(70px + 2.5rem)' }}>
+      <div style={{ 
+        margin: '0',
+        marginLeft: '70px',
+        padding: '40px 30px',
+        paddingTop: 'calc(70px + 40px)',
+        maxWidth: '1600px'
+      }}>
         {/* Header */}
-        <div style={{ marginBottom: '2rem' }}>
+        <div style={{ marginBottom: '32px' }}>
           <button
             onClick={() => navigate(-1)}
-            className="btn btn-outline"
-            style={{ marginBottom: '1.5rem' }}
+            style={{
+              padding: '12px 20px',
+              backgroundColor: 'white',
+              color: '#1e293b',
+              border: '2px solid #e2e8f0',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '15px',
+              marginBottom: '24px',
+              fontWeight: '600',
+              transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#f8fafc';
+              e.target.style.borderColor = '#cbd5e1';
+              e.target.style.transform = 'translateX(-4px)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = 'white';
+              e.target.style.borderColor = '#e2e8f0';
+              e.target.style.transform = 'translateX(0)';
+            }}
           >
-            ← Back
+            <span>←</span>
+            Back
           </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ fontSize: '2rem' }}>📊</span>
-            <h1 className="card-title" style={{ fontSize: '2rem', margin: 0 }}>Election Results</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <span style={{ fontSize: '48px' }}>📊</span>
+            <h1 style={{ 
+              fontSize: '32px', 
+              fontWeight: '800',
+              color: '#1e293b',
+              margin: 0,
+              letterSpacing: '-0.02em'
+            }}>
+              Election Results
+            </h1>
           </div>
         </div>
 
         {electionInfo && (
           <>
             {/* Election Info Card */}
-            <div className="card" style={{ marginBottom: '2rem', borderLeft: '4px solid #2563EB' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <h2 className="card-title" style={{ fontSize: '1.75rem', marginBottom: '0.75rem' }}>{electionInfo.title}</h2>
-                  <p className="card-subtitle" style={{ marginBottom: '0.5rem' }}>{electionInfo.description}</p>
-                  <span className="badge" style={{ fontSize: '0.8rem' }}>Election ID: {electionInfo.id}</span>
+            <div style={{
+              backgroundColor: 'white',
+              padding: '32px',
+              borderRadius: '16px',
+              marginBottom: '32px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'start', 
+                marginBottom: '24px', 
+                flexWrap: 'wrap', 
+                gap: '16px' 
+              }}>
+                <div style={{ flex: 1, minWidth: '300px' }}>
+                  <h2 style={{ 
+                    fontSize: '28px', 
+                    fontWeight: '700',
+                    marginBottom: '12px',
+                    color: '#1e293b'
+                  }}>
+                    {electionInfo.title}
+                  </h2>
+                  <p style={{ 
+                    marginBottom: '12px',
+                    color: '#64748b',
+                    fontSize: '16px',
+                    lineHeight: '1.6'
+                  }}>
+                    {electionInfo.description}
+                  </p>
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '6px 12px',
+                    backgroundColor: '#f1f5f9',
+                    borderRadius: '6px',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: '#475569',
+                    fontFamily: 'monospace'
+                  }}>
+                    ID: {electionInfo.id}
+                  </span>
                 </div>
-                <span className={`badge ${getElectionStatus() === 'Completed' ? 'badge-info' : getElectionStatus() === 'Voting Ongoing' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '1rem', padding: '0.75rem 1.5rem' }}>
-                  {getElectionStatus() === 'Completed' ? '✓ ' : getElectionStatus() === 'Voting Ongoing' ? '🔴 ' : '⏱️ '}
+                <span style={{
+                  padding: '12px 24px',
+                  borderRadius: '24px',
+                  fontSize: '15px',
+                  fontWeight: '700',
+                  letterSpacing: '0.02em',
+                  ...(getElectionStatus() === 'Completed' 
+                    ? { backgroundColor: '#dbeafe', color: '#1e40af' }
+                    : getElectionStatus() === 'Voting Ongoing'
+                    ? { backgroundColor: '#dcfce7', color: '#166534' }
+                    : { backgroundColor: '#fef3c7', color: '#92400e' })
+                }}>
+                  {getElectionStatus() === 'Completed' ? '✓' : 
+                   getElectionStatus() === 'Voting Ongoing' ? '🔴' : '⏱️'}{' '}
                   {getElectionStatus()}
                 </span>
               </div>
 
-              <div className="stats-grid" style={{ marginTop: '1.5rem' }}>
-                <div className="stat-card">
-                  <div className="stat-label">📅 Voting Period</div>
-                  <div style={{ fontSize: '0.9rem', color: '#475569', marginTop: '0.5rem' }}>
-                    {formatDateTime(electionInfo.startTime)}
+              {/* Statistics Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                gap: '20px'
+              }}>
+                <div style={{
+                  padding: '20px',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: '12px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  <div style={{ 
+                    color: '#64748b', 
+                    fontSize: '13px', 
+                    marginBottom: '12px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span style={{ fontSize: '18px' }}>📅</span>
+                    Voting Period
                   </div>
-                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.25rem' }}>to</div>
-                  <div style={{ fontSize: '0.9rem', color: '#475569' }}>
-                    {formatDateTime(electionInfo.endTime)}
+                  <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.6' }}>
+                    <div style={{ marginBottom: '6px' }}>
+                      <strong>Start:</strong> {formatDateTime(electionInfo.startTime)}
+                    </div>
+                    <div>
+                      <strong>End:</strong> {formatDateTime(electionInfo.endTime)}
+                    </div>
                   </div>
                 </div>
-                <div className="stat-card">
-                  <div className="stat-label">🗳️ Total Votes Cast</div>
-                  <div className="stat-value">{getTotalVotes()}</div>
+                <div style={{
+                  padding: '20px',
+                  backgroundColor: '#f0fdf4',
+                  borderRadius: '12px',
+                  border: '1px solid #bbf7d0'
+                }}>
+                  <div style={{ 
+                    color: '#166534', 
+                    fontSize: '13px', 
+                    marginBottom: '12px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span style={{ fontSize: '18px' }}>🗳️</span>
+                    Total Votes Cast
+                  </div>
+                  <div style={{ 
+                    fontSize: '40px', 
+                    fontWeight: '800',
+                    color: '#16a34a',
+                    lineHeight: '1'
+                  }}>
+                    {getTotalVotes()}
+                  </div>
                 </div>
-                <div className="stat-card">
-                  <div className="stat-label">👥 Total Candidates</div>
-                  <div className="stat-value">{candidates.length}</div>
+                <div style={{
+                  padding: '20px',
+                  backgroundColor: '#eff6ff',
+                  borderRadius: '12px',
+                  border: '1px solid #bfdbfe'
+                }}>
+                  <div style={{ 
+                    color: '#1e40af', 
+                    fontSize: '13px', 
+                    marginBottom: '12px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span style={{ fontSize: '18px' }}>👥</span>
+                    Total Candidates
+                  </div>
+                  <div style={{ 
+                    fontSize: '40px', 
+                    fontWeight: '800',
+                    color: '#2563eb',
+                    lineHeight: '1'
+                  }}>
+                    {candidates.length}
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Results Summary */}
             {candidates.length === 0 ? (
-              <div className="card" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
-                <div style={{ fontSize: '5rem', marginBottom: '1.5rem', opacity: 0.3 }}>👥</div>
-                <h3 className="card-title" style={{ fontSize: '1.5rem', marginBottom: '0.75rem' }}>No Candidates</h3>
-                <p className="card-subtitle" style={{ fontSize: '1rem' }}>No candidates have been approved for this election yet.</p>
+              <div style={{
+                backgroundColor: 'white',
+                padding: '80px 40px',
+                borderRadius: '16px',
+                textAlign: 'center',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)'
+              }}>
+                <div style={{ fontSize: '80px', marginBottom: '24px', opacity: 0.3 }}>👥</div>
+                <h3 style={{ 
+                  fontSize: '24px', 
+                  fontWeight: '700',
+                  marginBottom: '12px',
+                  color: '#1e293b'
+                }}>
+                  No Candidates
+                </h3>
+                <p style={{ 
+                  fontSize: '16px',
+                  color: '#64748b',
+                  margin: 0
+                }}>
+                  No candidates have been approved for this election yet.
+                </p>
               </div>
             ) : (
-              <div className="card">
-                <h2 className="card-title" style={{ marginBottom: '2rem' }}>
-                  🏆 Candidate Results
+              <div style={{
+                backgroundColor: 'white',
+                padding: '32px',
+                borderRadius: '16px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.02)'
+              }}>
+                <h2 style={{ 
+                  fontSize: '24px',
+                  fontWeight: '700',
+                  marginBottom: '32px',
+                  color: '#1e293b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
+                }}>
+                  <span style={{ fontSize: '28px' }}>🏆</span>
+                  Candidate Results
                 </h2>
 
-                {/* Winner Card (if voting completed) */}
-                {getElectionStatus() === 'Completed' && candidates.length > 0 && candidates[0].votes > 0 && (
-                  <div className="card" style={{
-                    background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-                    color: 'white',
-                    border: 'none',
-                    marginBottom: '2rem'
+                {/* Phase 4 Result Banner */}
+                {phase4Result && (
+                  <div style={{
+                    padding: '20px 24px',
+                    background: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)',
+                    borderRadius: '12px',
+                    border: '1px solid #a78bfa',
+                    marginBottom: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    flexWrap: 'wrap'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: '4rem' }}>🏆</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.9, marginBottom: '0.5rem' }}>WINNER</div>
-                        <h2 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0' }}>{candidates[0].name}</h2>
-                        <p style={{ margin: 0, fontSize: '1.1rem', opacity: 0.9 }}>{candidates[0].party}</p>
+                    <span style={{ fontSize: '28px' }}>🔓</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '15px', fontWeight: '700', color: '#3730a3', marginBottom: '4px' }}>
+                        Results Published via Threshold Decryption
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#4338ca' }}>
+                        Shares used: {phase4Result.shares_used?.length ?? '—'}
+                        &nbsp;·&nbsp;Published: {phase4Result.published_at ? new Date(phase4Result.published_at).toLocaleString() : '—'}
                       </div>
                     </div>
-                    <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
-                      <div>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>Votes Received</div>
-                        <div style={{ fontSize: '2rem', fontWeight: '700' }}>{candidates[0].votes}</div>
+                  </div>
+                )}
+
+                {/* Encrypted tally notice – shown while awaiting Phase 4 */}
+                {!phase4Result && getElectionStatus() === 'Completed' && (
+                  <div style={{
+                    padding: '16px 20px',
+                    backgroundColor: '#fef3c7',
+                    borderRadius: '10px',
+                    border: '1px solid #fcd34d',
+                    marginBottom: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px'
+                  }}>
+                    <span style={{ fontSize: '22px' }}>🔐</span>
+                    <div style={{ fontSize: '14px', color: '#92400e' }}>
+                      Votes are encrypted. Results will appear here after the organizer runs Phase 4 threshold decryption.
+                    </div>
+                  </div>
+                )}
+
+                {/* Winner Card — only shown after Phase 4 results published */}
+                {phase4Result && getElectionStatus() === 'Completed' && candidates.length > 0 && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #fcd34d 0%, #f59e0b 100%)',
+                    color: 'white',
+                    padding: '32px',
+                    borderRadius: '16px',
+                    marginBottom: '32px',
+                    boxShadow: '0 10px 25px -5px rgba(245, 158, 11, 0.3), 0 10px 10px -5px rgba(245, 158, 11, 0.2)',
+                    border: '2px solid rgba(255,255,255,0.3)'
+                  }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '24px', 
+                      marginBottom: '24px', 
+                      flexWrap: 'wrap' 
+                    }}>
+                      <span style={{ fontSize: '80px', lineHeight: '1' }}>🏆</span>
+                      <div style={{ flex: 1, minWidth: '200px' }}>
+                        <div style={{ 
+                          fontSize: '14px', 
+                          fontWeight: '700',
+                          opacity: 0.9, 
+                          marginBottom: '8px',
+                          letterSpacing: '0.1em'
+                        }}>
+                          ELECTION WINNER
+                        </div>
+                        <h2 style={{ 
+                          fontSize: '36px', 
+                          margin: '0 0 8px 0',
+                          fontWeight: '800',
+                          lineHeight: '1.2'
+                        }}>
+                          {candidates[0].name}
+                        </h2>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: '18px', 
+                          opacity: 0.95,
+                          fontWeight: '600'
+                        }}>
+                          {candidates[0].party}
+                        </p>
                       </div>
+                    </div>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: '20px',
+                      padding: '20px',
+                      backgroundColor: 'rgba(255,255,255,0.2)',
+                      borderRadius: '12px',
+                      backdropFilter: 'blur(10px)'
+                    }}>
                       <div>
-                        <div style={{ fontSize: '0.875rem', opacity: 0.9 }}>Vote Share</div>
-                        <div style={{ fontSize: '2rem', fontWeight: '700' }}>{candidates[0].percentage}%</div>
+                        <div style={{ 
+                          fontSize: '14px', 
+                          opacity: 0.9,
+                          fontWeight: '600',
+                          marginBottom: '8px'
+                        }}>
+                          Total Votes Cast
+                        </div>
+                        <div style={{ 
+                          fontSize: '36px', 
+                          fontWeight: '800',
+                          lineHeight: '1'
+                        }}>
+                          {phase4Result.total_votes ?? totalVotes}
+                        </div>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* All Candidates Results */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                   {candidates.map((candidate, index) => (
                     <div
                       key={candidate.address}
-                      className="card"
                       style={{
-                        borderLeft: index === 0 && getElectionStatus() === 'Completed' ? '4px solid #f59e0b' : '4px solid #e2e8f0',
-                        background: index === 0 && getElectionStatus() === 'Completed' ? 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)' : 'white'
+                        padding: '28px',
+                        backgroundColor: index === 0 && getElectionStatus() === 'Completed' 
+                          ? '#fffbeb' 
+                          : '#f8fafc',
+                        borderRadius: '16px',
+                        border: index === 0 && getElectionStatus() === 'Completed' 
+                          ? '2px solid #fbbf24' 
+                          : '2px solid #e2e8f0',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = index === 0 && getElectionStatus() === 'Completed' 
+                          ? '#f59e0b' 
+                          : '#cbd5e1';
+                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = index === 0 && getElectionStatus() === 'Completed' 
+                          ? '#fbbf24' 
+                          : '#e2e8f0';
+                        e.currentTarget.style.boxShadow = 'none';
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1.25rem', gap: '1rem', flexWrap: 'wrap' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-                            <span className="badge" style={{ 
-                              fontSize: '1.25rem',
-                              padding: '0.5rem 0.75rem',
-                              background: index === 0 ? 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)' : '#64748b',
-                              color: 'white'
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'start', 
+                        marginBottom: '20px', 
+                        gap: '16px', 
+                        flexWrap: 'wrap' 
+                      }}>
+                        <div style={{ flex: 1, minWidth: '250px' }}>
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '12px', 
+                            marginBottom: '12px', 
+                            flexWrap: 'wrap' 
+                          }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '18px',
+                              fontWeight: '800',
+                              padding: '8px 16px',
+                              borderRadius: '10px',
+                              minWidth: '52px',
+                              background: index === 0 
+                                ? 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)' 
+                                : index === 1
+                                ? 'linear-gradient(135deg, #94a3b8 0%, #64748b 100%)'
+                                : index === 2
+                                ? 'linear-gradient(135deg, #c2410c 0%, #9a3412 100%)'
+                                : '#64748b',
+                              color: 'white',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
                             }}>
                               #{index + 1}
                             </span>
-                            <h3 className="card-title" style={{ margin: 0, fontSize: '1.5rem' }}>{candidate.name}</h3>
-                            <span className="badge badge-info" style={{ fontSize: '0.875rem' }}>{candidate.party}</span>
+                            <h3 style={{ 
+                              margin: 0, 
+                              fontSize: '24px',
+                              fontWeight: '700',
+                              color: '#1e293b'
+                            }}>
+                              {candidate.name}
+                            </h3>
+                            <span style={{
+                              padding: '6px 14px',
+                              backgroundColor: '#dbeafe',
+                              borderRadius: '8px',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              color: '#1e40af'
+                            }}>
+                              {candidate.party}
+                            </span>
                           </div>
-                          <p style={{ color: '#64748b', margin: '0.5rem 0 0 0', fontSize: '0.875rem', fontFamily: 'monospace' }}>
-                            {candidate.address.substring(0, 15)}...{candidate.address.substring(candidate.address.length - 10)}
+                          <p style={{ 
+                            color: '#64748b', 
+                            margin: 0, 
+                            fontSize: '13px', 
+                            fontFamily: 'monospace',
+                            fontWeight: '500'
+                          }}>
+                            {candidate.address.substring(0, 20)}...{candidate.address.substring(candidate.address.length - 15)}
                           </p>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div className="stat-value" style={{ fontSize: '2.5rem', lineHeight: 1 }}>
-                            {candidate.votes}
+                          <div style={{ 
+                            fontSize: '48px', 
+                            fontWeight: '800',
+                            lineHeight: '1',
+                            color: phase4Result ? '#1e293b' : '#94a3b8'
+                          }}>
+                            {phase4Result ? candidate.votes : '🔒'}
                           </div>
-                          <div className="stat-label" style={{ marginTop: '0.25rem' }}>votes</div>
+                          <div style={{ 
+                            marginTop: '4px',
+                            fontSize: '14px',
+                            color: '#64748b',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                          }}>
+                            {phase4Result ? 'votes' : 'encrypted'}
+                          </div>
                         </div>
                       </div>
 
                       {/* Vote Percentage Bar */}
-                      <div style={{ marginBottom: '1rem' }}>
+                      <div style={{ marginBottom: '20px' }}>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '8px'
+                        }}>
+                          <span style={{
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: '#475569'
+                          }}>
+                            Vote Share
+                          </span>
+                          <span style={{
+                            fontSize: '20px',
+                            fontWeight: '800',
+                            color: index === 0 ? '#16a34a' : '#64748b'
+                          }}>
+                            {phase4Result ? `${candidate.percentage}%` : '— %'}
+                          </span>
+                        </div>
                         <div style={{
                           width: '100%',
-                          height: '40px',
-                          backgroundColor: '#f1f5f9',
-                          borderRadius: '20px',
+                          height: '48px',
+                          backgroundColor: '#e2e8f0',
+                          borderRadius: '24px',
                           overflow: 'hidden',
                           position: 'relative',
-                          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)'
+                          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
                         }}>
                           <div style={{
-                            width: `${candidate.percentage}%`,
+                            width: phase4Result ? `${candidate.percentage}%` : '0%',
                             height: '100%',
-                            background: index === 0 ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' : 
-                                       index === 1 ? 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)' :
-                                       'linear-gradient(90deg, #64748b 0%, #475569 100%)',
-                            transition: 'width 1s ease',
+                            background: index === 0 
+                              ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' 
+                              : index === 1 
+                              ? 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)'
+                              : 'linear-gradient(90deg, #64748b 0%, #475569 100%)',
+                            transition: 'width 1s ease-out',
                             display: 'flex',
                             alignItems: 'center',
-                            paddingLeft: '1.25rem',
+                            justifyContent: 'flex-start',
+                            paddingLeft: '20px',
                             color: 'white',
-                            fontWeight: 'bold',
-                            fontSize: '1rem',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                            fontWeight: '800',
+                            fontSize: '18px',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                            borderRadius: '24px'
                           }}>
-                            {candidate.percentage}%
+                            {phase4Result && candidate.percentage > 10 && `${candidate.percentage}%`}
                           </div>
+                          {!phase4Result && (
+                            <div style={{
+                              position: 'absolute', inset: 0,
+                              display: 'flex', alignItems: 'center', paddingLeft: '20px',
+                              fontSize: '14px', fontWeight: '600', color: '#94a3b8'
+                            }}>
+                              🔒 Awaiting threshold decryption
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       {/* Manifesto */}
                       {candidate.manifesto && (
-                        <div className="card" style={{ background: '#fafbfc', padding: '1.25rem', marginTop: '1rem' }}>
-                          <div className="form-label" style={{ marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-                            📋 Manifesto
+                        <div style={{
+                          padding: '20px',
+                          backgroundColor: 'white',
+                          borderRadius: '12px',
+                          border: '1px solid #e2e8f0'
+                        }}>
+                          <div style={{
+                            fontSize: '13px',
+                            fontWeight: '700',
+                            color: '#64748b',
+                            marginBottom: '12px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            <span style={{ fontSize: '16px' }}>📋</span>
+                            Manifesto
                           </div>
-                          <p style={{ color: '#475569', margin: 0, fontSize: '0.95rem', lineHeight: '1.6' }}>
+                          <p style={{ 
+                            color: '#334155', 
+                            margin: 0, 
+                            fontSize: '15px', 
+                            lineHeight: '1.7'
+                          }}>
                             {candidate.manifesto}
                           </p>
                         </div>

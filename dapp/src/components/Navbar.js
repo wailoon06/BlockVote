@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-export default function Navbar({ title, walletAddress, onLogout, userRole, onConnect, isConnected }) {
+export default function Navbar({ title, walletAddress, onLogout, userRole, userStatus, onConnect, isConnected }) {
   const navigate = useNavigate();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -46,7 +46,7 @@ export default function Navbar({ title, walletAddress, onLogout, userRole, onCon
           }}
         >
           <span style={{ fontSize: '1.75rem' }}>🗳️</span>
-          {title || 'BlockVote'}
+          BlockVote
         </div>
 
         {/* Right Section */}
@@ -82,33 +82,6 @@ export default function Navbar({ title, walletAddress, onLogout, userRole, onCon
               🔗 Connect Wallet
             </button>
           )}
-          
-          {/* Search Bar (optional - can be enabled later) */}
-          {walletAddress && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              backgroundColor: '#f8fafc',
-              borderRadius: '12px',
-              padding: '0.5rem 1rem',
-              border: '1px solid #e2e8f0',
-              minWidth: '300px'
-            }}>
-              <span style={{ color: '#94a3b8', marginRight: '0.5rem' }}>🔍</span>
-              <input 
-                type="text"
-                placeholder="Search..."
-                style={{
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  outline: 'none',
-                  width: '100%',
-                  color: '#1e293b',
-                  fontSize: '0.95rem'
-                }}
-              />
-            </div>
-          )}
 
           {/* Wallet Address & Profile */}
           {walletAddress && (
@@ -138,7 +111,7 @@ export default function Navbar({ title, walletAddress, onLogout, userRole, onCon
               </div>
 
               {/* User Profile Menu */}
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <div
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
                   style={{

@@ -70,6 +70,13 @@ export default function Home() {
         return;
       }
 
+      // Check if registered trustee
+      const trusteeInfo = await deployedContract.methods.getTrusteeInfo(address).call();
+      if (trusteeInfo.walletAddress.toLowerCase() === address.toLowerCase()) {
+        navigate('/trustee-dashboard');
+        return;
+      }
+
       // Check if registered as voter or candidate
       const isVoter = await deployedContract.methods.isVoterRegistered(address).call();
       const isCandidate = await deployedContract.methods.isCandidateRegistered(address).call();
@@ -101,19 +108,15 @@ export default function Home() {
             registeredAt: organizerInfo.registeredAt
           };
           setUserStatus(status);
-        } else if (isVoter) {
-          const voterInfo = await deployedContract.methods.getVoterInfo(address).call();
-          const status = {
-            role: 'Voter',
-            status: voterInfo.status,
-            name: voterInfo.name,
-            email: voterInfo.email,
-            registeredAt: voterInfo.registeredAt,
-            verifiedAt: voterInfo.verifiedAt
-          };
-          setUserStatus(status);
         } else if (isCandidate) {
           const candidateInfo = await deployedContract.methods.getCandidateInfo(address).call();
+          
+          // If candidate is verified, redirect to dashboard
+          if (candidateInfo.status === 'VERIFIED') {
+            navigate('/candidate-dashboard');
+            return;
+          }
+          
           const status = {
             role: 'Candidate',
             status: candidateInfo.status,
@@ -122,6 +125,24 @@ export default function Home() {
             party: candidateInfo.party,
             registeredAt: candidateInfo.registeredAt,
             verifiedAt: candidateInfo.verifiedAt
+          };
+          setUserStatus(status);
+        } else if (isVoter) {
+          const voterInfo = await deployedContract.methods.getVoterInfo(address).call();
+          
+          // If voter is verified, redirect to dashboard
+          if (voterInfo.status === 'VERIFIED') {
+            navigate('/voter-dashboard');
+            return;
+          }
+          
+          const status = {
+            role: 'Voter',
+            status: voterInfo.status,
+            name: voterInfo.name,
+            email: voterInfo.email,
+            registeredAt: voterInfo.registeredAt,
+            verifiedAt: voterInfo.verifiedAt
           };
           setUserStatus(status);
         }
@@ -548,10 +569,10 @@ export default function Home() {
         userRole={isRegisteredAsAny ? userStatus?.role : null}
         isConnected={isConnected}
       />
-      <Sidebar userRole={isRegisteredAsAny ? userStatus?.role : null} />
+      {isRegisteredAsAny && <Sidebar userRole={userStatus?.role} />}
       
       <div style={{ 
-        marginLeft: '70px',
+        marginLeft: isRegisteredAsAny ? '70px' : '0',
         marginTop: '70px',
         minHeight: 'calc(100vh - 70px)',
         padding: '2.5rem',

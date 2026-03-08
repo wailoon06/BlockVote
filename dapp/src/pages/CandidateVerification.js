@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
+import { verifyICMatch } from '../utils/icHashUtils';
+import { generateRegistrationProof } from '../utils/zkpProofGenerator';
+import { generateVoterSecret, storeVoterSecret, getVoterSecret } from '../utils/poseidonUtils';
 import Navbar from '../components/Navbar';
 import MessageAlert from '../components/MessageAlert';
 
@@ -146,7 +149,7 @@ export default function CandidateVerify() {
     }
 
     setVerifying(true);
-    setMessage('🔍 Step 1/3: Verifying your identity documents...');
+    setMessage('🔍 Step 1/5: Verifying your identity documents...');
     setMessageType('info');
 
     try {
@@ -155,7 +158,7 @@ export default function CandidateVerify() {
       icFormData.append('back', icBackPhoto);
       icFormData.append('selfie_image', selfiePhoto);
 
-      setMessage('📄 Step 1/3: Extracting and validating IC information...');
+      setMessage('📄 Step 1/5: Extracting and validating IC information...');
       const icResponse = await fetch('http://localhost:5000/verify', {
         method: 'POST',
         body: icFormData
@@ -167,19 +170,53 @@ export default function CandidateVerify() {
         throw new Error(result.feedback || result.message || result.error || 'IC verification failed. Please ensure your IC photos are clear and readable.');
       }
 
-      setMessage('✅ Step 2/3: Identity verified! Preparing blockchain transaction...');
+      // Step 2: Validate OCR IC matches stored IC hash on blockchain
+      setMessage('🔐 Step 2/5: Validating IC against blockchain records...');
       setMessageType('info');
 
       const { deployedContract } = await getDeployedContract();
-
       const candidateData = await deployedContract.methods.candidates(walletAddress).call();
-      const verificationCode = candidateData.verificationCode;
+      const storedICHash = candidateData.icHash;
 
-      setMessage('🔐 Step 3/3: Please confirm the transaction in MetaMask to complete verification');
+      // Compare OCR-extracted IC with stored IC hash
+      const ocrIC = result.ic_number;
+      if (!ocrIC) {
+        throw new Error('IC number not found in verification result. Please try again.');
+      }
+
+      const icMatches = verifyICMatch(ocrIC, storedICHash);
+      if (!icMatches) {
+        throw new Error('IC mismatch: The IC number from your photo does not match the IC registered with your wallet. Please ensure you are using the correct IC card.');
+      }
+
+      setMessage('✅ Step 3/5: IC validated! Generating age proof...');
       setMessageType('info');
 
-      await deployedContract.methods
-        .verifyCandidate(verificationCode)
+      // Step 3: Retrieve or generate candidate secret (persisted in localStorage, encrypted with MetaMask key)
+      let voterSecret = await getVoterSecret(walletAddress);
+      if (!voterSecret) {
+        voterSecret = generateVoterSecret();
+        await storeVoterSecret(walletAddress, voterSecret);
+        console.log('[ZKP] New secret generated and stored locally');
+      } else {
+        console.log('[ZKP] Using existing secret from localStorage');
+      }
+
+      // Step 4: Generate registration ZKP proof (VoteWithICAgeCheck, electionId=0)
+      setMessage('🔒 Step 4/5: Generating zero-knowledge proof (this may take 10-30 seconds)...');
+
+      const { proof, publicSignals, pA, pB, pC, pubSignals } =
+        await generateRegistrationProof(ocrIC, walletAddress, voterSecret);
+
+      console.log('Registration proof generated:', { proof, publicSignals });
+
+      setMessage('🔐 Step 5/5: Please confirm the transaction in MetaMask to complete verification');
+      setMessageType('info');
+
+      // Submit ZKP proof to contract
+      const { deployedContract: contract } = await getDeployedContract();
+      await contract.methods
+        .verifyCandidateWithZKP(pA, pB, pC, pubSignals)
         .send({ from: walletAddress });
 
       setMessage('🎉 Verification Complete! Your candidate account has been successfully verified and recorded on the blockchain.');

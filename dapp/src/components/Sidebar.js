@@ -18,21 +18,25 @@ export default function Sidebar({ userRole }) {
     } else if (userRole === 'organizer') {
       return [
         { icon: '🏠', label: 'Dashboard', path: '/organizer-dashboard' },
-        { icon: '📊', label: 'My Campaigns', path: '/campaigns' },
-        { icon: '➕', label: 'Create Election', path: '/create-election' },
-        { icon: '📈', label: 'Analytics', path: '/analytics' }
+        { icon: '➕', label: 'Create Election', path: '/organizer-dashboard?action=create' }
+      ];
+    } else if (userRole === 'candidate') {
+      return [
+        { icon: '🏠', label: 'Dashboard', path: '/candidate-dashboard' },
+        { icon: '📝', label: 'Apply Elections', path: '/candidate-elections' }
       ];
     } else if (userRole === 'voter') {
       return [
-        { icon: '🏠', label: 'Home', path: '/' },
-        { icon: '🗳️', label: 'Vote', path: '/vote' },
-        { icon: '📜', label: 'My Votes', path: '/my-votes' },
-        { icon: '👤', label: 'Profile', path: '/profile' }
+        { icon: '🏠', label: 'Dashboard', path: '/voter-dashboard' },
+        { icon: '🗳️', label: 'Vote in Elections', path: '/voter-elections' }
+      ];
+    } else if (userRole === 'trustee') {
+      return [
+        { icon: '🏠', label: 'Dashboard', path: '/trustee-dashboard' }
       ];
     }
     return [
-      { icon: '🏠', label: 'Home', path: '/' },
-      { icon: 'ℹ️', label: 'About', path: '/about' }
+      { icon: '🏠', label: 'Home', path: '/' }
     ];
   };
 
@@ -58,7 +62,9 @@ export default function Sidebar({ userRole }) {
     >
       <nav style={{ padding: '1rem 0' }}>
         {menuItems.map((item, index) => {
-          const isActive = location.pathname === item.path;
+          const [itemPath, itemQuery] = item.path.split('?');
+          const isActive = location.pathname === itemPath &&
+            location.search === (itemQuery ? '?' + itemQuery : '');
           return (
             <div
               key={index}

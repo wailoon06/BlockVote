@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
+import { verifyICMatch } from '../utils/icHashUtils';
+import { generateRegistrationProof } from '../utils/zkpProofGenerator';
+import { generateVoterSecret, storeVoterSecret, getVoterSecret } from '../utils/poseidonUtils';
 import Navbar from '../components/Navbar';
 import MessageAlert from '../components/MessageAlert';
 
@@ -145,7 +148,7 @@ export default function Verify() {
     }
 
     setVerifying(true);
-    setMessage('🔍 Step 1/3: Verifying your identity documents...');
+    setMessage('🔍 Step 1/5: Verifying your identity documents...');
     setMessageType('info');
 
     try {
@@ -154,7 +157,7 @@ export default function Verify() {
       icFormData.append('back', icBackPhoto);
       icFormData.append('selfie_image', selfiePhoto);
 
-      setMessage('📄 Step 1/3: Extracting and validating IC information...');
+      setMessage('Scanning IC...');
       const icResponse = await fetch('http://localhost:5000/verify', {
         method: 'POST',
         body: icFormData
@@ -163,25 +166,59 @@ export default function Verify() {
       const result = await icResponse.json();
 
       if (!icResponse.ok || !result.ic_verified) {
-        throw new Error(result.feedback || result.message || result.error || 'IC verification failed. Please ensure your IC photos are clear and readable.');
+        throw new Error(result.feedback || result.message || result.error || 'IC verification failed. Ensure your photos are clear and readable.');
       }
 
-      setMessage('✅ Step 2/3: Identity verified! Preparing blockchain transaction...');
+      // Step 2: Validate OCR IC matches stored IC hash on blockchain
+      setMessage('Validating IC...');
       setMessageType('info');
 
       const { deployedContract } = await getDeployedContract();
-
       const voterData = await deployedContract.methods.voters(walletAddress).call();
-      const verificationCode = voterData.verificationCode;
+      const storedICHash = voterData.icHash;
 
-      setMessage('🔐 Step 3/3: Please confirm the transaction in MetaMask to complete verification');
+      // Compare OCR-extracted IC with stored IC hash
+      const ocrIC = result.ic_number;
+      if (!ocrIC) {
+        throw new Error('IC number not found in verification result. Please try again.');
+      }
+
+      const icMatches = verifyICMatch(ocrIC, storedICHash);
+      if (!icMatches) {
+        throw new Error('IC mismatch. Please use the correct IC card registered with your wallet.');
+      }
+
+      setMessage('IC validated. Generating proof...');
       setMessageType('info');
 
-      await deployedContract.methods
-        .verifyVoter(verificationCode)
+      // Step 3: Retrieve or generate voter secret (persisted in localStorage, encrypted with MetaMask key)
+      let voterSecret = await getVoterSecret(walletAddress);
+      if (!voterSecret) {
+        voterSecret = generateVoterSecret();
+        await storeVoterSecret(walletAddress, voterSecret);
+        console.log('[ZKP] New voter secret generated and stored locally');
+      } else {
+        console.log('[ZKP] Using existing voter secret from localStorage');
+      }
+
+      // Step 4: Generate registration ZKP proof (VoteWithICAgeCheck, electionId=0)
+      setMessage('Generating proof (may take ~30s)...');
+
+      const { proof, publicSignals, pA, pB, pC, pubSignals } =
+        await generateRegistrationProof(ocrIC, walletAddress, voterSecret);
+
+      console.log('Registration proof generated:', { proof, publicSignals });
+
+      setMessage('Confirm transaction in MetaMask...');
+      setMessageType('info');
+
+      // Step 5: Submit ZKP proof to contract — also stores Poseidon commitment on-chain
+      const { deployedContract: contract } = await getDeployedContract();
+      await contract.methods
+        .verifyVoterWithZKP(pA, pB, pC, pubSignals)
         .send({ from: walletAddress });
 
-      setMessage('🎉 Verification Complete! Your account has been successfully verified and recorded on the blockchain.');
+      setMessage('✅ Verification complete!');
       setMessageType('success');
       
       setTimeout(() => {
@@ -193,7 +230,7 @@ export default function Verify() {
       
       let errorMsg = 'Verification failed. ';
       if (error.message.includes('Failed to fetch')) {
-        errorMsg += 'Cannot connect to verification server. Please ensure the Flask server is running on http://localhost:5000';
+        errorMsg += 'Cannot connect to verification server (localhost:5000). Make sure it is running.';
       } else if (error.message) {
         errorMsg = error.message;
       }
