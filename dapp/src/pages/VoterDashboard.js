@@ -104,7 +104,7 @@ function VoterDashboard() {
 
       for (let i = 1; i <= totalElections; i++) {
         const info = await contractInstance.methods.getElectionInfo(i).call();
-        const hasVoted = await contractInstance.methods.hasVoted(i, address).call();
+        const hasVoted = false; // ZKP voting is anonymous — per-address voted status is not stored on-chain
 
         if (hasVoted) {
           votedCount++;

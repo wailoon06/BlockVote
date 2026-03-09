@@ -140,7 +140,7 @@ export default function VoterElections() {
             try {
               const nullifierDecimal = await computeNullifier(voterSecret, i);
               const nullifierBytes32 = toBytes32(nullifierDecimal);
-              hasVoted = await contract.methods.hasVoterVoted(i, nullifierBytes32).call();
+              hasVoted = await contract.methods.nullifierUsed(i, nullifierBytes32).call();
             } catch {
               hasVoted = false;
             }

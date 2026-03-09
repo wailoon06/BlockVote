@@ -15,7 +15,7 @@
 /**
  * Fast modular exponentiation: (base ^ exp) mod modulus
  */
-function modPow(base, exp, modulus) {
+export function modPow(base, exp, modulus) {
   if (modulus === 1n) return 0n;
   let result = 1n;
   base = ((base % modulus) + modulus) % modulus;
@@ -300,4 +300,5 @@ export async function decryptShareY(encryptedY, passphrase) {
   }
 }
 
-export default { reconstructSecret, paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY };
+export default { reconstructSecret, paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY, modPow };
+

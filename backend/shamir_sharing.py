@@ -3,6 +3,7 @@ Shamir's Secret Sharing Implementation
 """
 
 import random
+import secrets
 from typing import List, Tuple
 
 # RFC 3526 MODP Group 14 – 2048-bit safe prime (standardised, well-audited).
@@ -56,7 +57,7 @@ class ShamirSecretSharing:
         polynomial lives entirely in the finite field.
         """
         coefficients = [secret % self.prime] + [
-            random.randrange(1, self.prime) for _ in range(degree)
+            secrets.randbelow(self.prime) for _ in range(degree)
         ]
         return coefficients
     

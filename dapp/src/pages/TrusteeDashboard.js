@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import MessageAlert from '../components/MessageAlert';
+import IPFSClient from '../utils/ipfsClient';
 import { getDeployedContract } from '../utils/contractUtils';
 
 export default function TrusteeDashboard() {
@@ -13,6 +14,10 @@ export default function TrusteeDashboard() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
+
+  // Per-election share submission state (keyed by electionId)
+  const [shareFiles, setShareFiles] = useState({});       // unused placeholder
+  const [sharePassphrases, setSharePassphrases] = useState({}); // unused placeholder
 
   useEffect(() => { initialize(); }, []);
 
@@ -178,10 +183,23 @@ export default function TrusteeDashboard() {
                         {badge.label}
                       </span>
                     </div>
-                    <p style={{ margin: 0, color: '#64748b', fontSize: '14px' }}>
-                      Election #{e.id} · Ended: {formatDate(e.endTime)}
-                    </p>
+<p style={{ color: '#64748b', margin: 0, fontSize: '14px' }}>
+                    Election #{e.id} · Ended: {formatDate(e.endTime)}
+                  </p>
+                </div>
+
+                {/* Decryption required notice */}
+                {e.tallyStored && !e.resultsPublished && (
+                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0', width: '100%' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
+                      🔑 Decryption Required
+                    </div>
+                    <div style={{ padding: '10px 14px', backgroundColor: '#fef3c7', borderRadius: '8px', color: '#92400e', fontSize: '13px' }}>
+                      Provide your share file (<code>trustee_shares/trustee_{trusteeIndex}.json</code>) and
+                      passphrase to the election organizer so they can perform threshold decryption and publish results.
+                    </div>
                   </div>
+                )}
 
                   <button
                     onClick={() => navigate('/organizer-manage-election', { state: { electionId: e.id } })}

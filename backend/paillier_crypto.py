@@ -2,7 +2,7 @@
 Paillier Homomorphic Encryption Implementation
 """
 
-import random
+import secrets
 from math import gcd
 from typing import Tuple
 
@@ -27,7 +27,7 @@ def mod_inverse(a: int, m: int) -> int:
     return x1 + m0 if x1 < 0 else x1
 
 
-def is_prime(n: int, k: int = 5) -> bool:
+def is_prime(n: int, k: int = 40) -> bool:
     """Miller-Rabin primality test"""
     if n < 2:
         return False
@@ -44,7 +44,7 @@ def is_prime(n: int, k: int = 5) -> bool:
     
     # Witness loop
     for _ in range(k):
-        a = random.randrange(2, n - 1)
+        a = secrets.randbelow(n - 3) + 2  # uniform in [2, n-2]
         x = pow(a, d, n)
         
         if x == 1 or x == n - 1:
@@ -63,7 +63,7 @@ def is_prime(n: int, k: int = 5) -> bool:
 def generate_prime(bits: int) -> int:
     """Generate a random prime number with specified bit length"""
     while True:
-        num = random.getrandbits(bits)
+        num = secrets.randbits(bits)
         # Set MSB and LSB to ensure odd number of correct bit length
         num |= (1 << bits - 1) | 1
         if is_prime(num):
@@ -85,7 +85,7 @@ class PaillierPublicKey:
         
         # Generate random r
         while True:
-            r = random.randrange(1, self.n)
+            r = secrets.randbelow(self.n - 1) + 1  # uniform in [1, n-1]
             if gcd(r, self.n) == 1:
                 break
         

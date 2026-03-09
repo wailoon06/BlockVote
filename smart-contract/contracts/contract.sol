@@ -152,7 +152,7 @@ contract Contract {
         string decryptedResult,
         uint256 timestamp
     );
-    
+
     // ===== STATE VARIABLES =====
     address public admin;
     address[] private voterAddresses;
@@ -173,7 +173,6 @@ contract Contract {
     // Election-scoped candidacy (Phase 3 & 4)
     mapping(uint256 => address[]) private electionCandidateApplicants;
     mapping(uint256 => mapping(address => uint8)) public candidateApplicationStatus;
-    mapping(uint256 => mapping(address => bool)) public hasVoted;
     // candidateVotes removed - using encrypted voting instead
     
     // ===== ZKP VOTING =====
@@ -198,10 +197,6 @@ contract Contract {
         uint256 timestamp
     );
 
-    // ===== PHASE 4: Threshold Decryption State =====
-    mapping(uint256 => mapping(address => bool)) public hasSubmittedDecryptionShare;
-    mapping(uint256 => uint256) public decryptionShareCount;
-    
     constructor(address[] memory _trusteeAddresses, uint256 _threshold) {
         if (_trusteeAddresses.length < 2) revert InsufficientTrustees();
         if (_threshold < 2) revert InvalidThreshold();
@@ -237,9 +232,9 @@ contract Contract {
         if (trustees[msg.sender].walletAddress == address(0)) revert NotTrustee();
         _;
     }
-    
+
     // Set ZKP Vote Verifier contract (VoteWithICAgeCheck verifier)
-    function setVoteVerifier(address _voteVerifier) public onlyAdmin {
+    function setVoteVerifier(address _voteVerifier) external onlyAdmin {
         if (_voteVerifier == address(0)) revert ZeroAddress();
         voteVerifier = IVoteVerifier(_voteVerifier);
     }
@@ -250,7 +245,7 @@ contract Contract {
      * @dev Set the Paillier public key (can only be set once by admin)
      * @param _publicKeyN The public key modulus N as a string
      */
-    function setPaillierPublicKey(string memory _publicKeyN) public onlyAdmin {
+    function setPaillierPublicKey(string calldata _publicKeyN) external onlyAdmin {
         if (isPaillierKeySet) revert AlreadyKeySet();
         if (bytes(_publicKeyN).length == 0) revert EmptyInput();
         
@@ -266,7 +261,7 @@ contract Contract {
      * @param _trustee    Address of the trustee whose commitment is being submitted
      * @param _commitment Hash of the secret share (keccak256 of share data)
      */
-    function submitShareCommitment(address _trustee, bytes32 _commitment) public {
+    function submitShareCommitment(address _trustee, bytes32 _commitment) external {
         if (msg.sender != admin && msg.sender != _trustee) revert Unauthorized();
         if (trustees[_trustee].walletAddress == address(0)) revert NotTrustee();
         if (trustees[_trustee].hasSubmittedCommitment) revert AlreadyCommitted();
@@ -281,7 +276,7 @@ contract Contract {
     /**
      * @dev Get Paillier public key
      */
-    function getPaillierPublicKey() public view returns (string memory) {
+    function getPaillierPublicKey() external view returns (string memory) {
         if (!isPaillierKeySet) revert KeyNotSet();
         return paillierPublicKeyN;
     }
@@ -289,14 +284,14 @@ contract Contract {
     /**
      * @dev Get list of all trustee addresses
      */
-    function getTrusteeAddresses() public view returns (address[] memory) {
+    function getTrusteeAddresses() external view returns (address[] memory) {
         return trusteeAddresses;
     }
     
     /**
      * @dev Check if all trustees have submitted their commitments
      */
-    function allTrusteesCommitted() public view returns (bool) {
+    function allTrusteesCommitted() external view returns (bool) {
         for (uint256 i = 0; i < trusteeAddresses.length; i++) {
             if (!trustees[trusteeAddresses[i]].hasSubmittedCommitment) {
                 return false;
@@ -308,7 +303,7 @@ contract Contract {
     /**
      * @dev Get trustee information
      */
-    function getTrusteeInfo(address _trustee) public view returns (
+    function getTrusteeInfo(address _trustee) external view returns (
         address walletAddress,
         bytes32 shareCommitment,
         bool hasSubmittedCommitment,
@@ -322,15 +317,15 @@ contract Contract {
             t.registeredAt
         );
     }
-    
+
     // ===== PHASE 2: Encrypted Voting Functions =====
     // (votes now stored anonymously by ZKP nullifier — see getZKPVote / getZKPVoteNullifiers)
 
     function storeEncryptedTally(
         uint256 _electionId,
-        string memory _encryptedTally,
+        string calldata _encryptedTally,
         bytes32 _tallyInputHash   // keccak256(abi.encodePacked(cid_0, cid_1, ...)) in nullifier order
-    ) public {
+    ) external {
         if (elections[_electionId].id == 0) revert ElectionNotFound();
         if (msg.sender != admin && msg.sender != elections[_electionId].organizer) revert Unauthorized();
         if (elections[_electionId].tallyStored) revert AlreadyPublished();
@@ -354,7 +349,7 @@ contract Contract {
         emit EncryptedTallyStored(_electionId, _encryptedTally, voteCount, block.timestamp);
     }
 
-    function getEncryptedTally(uint256 _electionId) public view returns (
+    function getEncryptedTally(uint256 _electionId) external view returns (
         string memory encryptedTally, uint256 totalVotes, bool tallyStored
     ) {
         if (elections[_electionId].id == 0) revert ElectionNotFound();
@@ -432,20 +427,13 @@ contract Contract {
         uint256 timestamp
     );
 
-    event VoteCast(
-        uint256 indexed electionId,
-        address indexed voter,
-        address indexed candidate,
-        uint256 timestamp
-    );
-
     // Common functions
-    function isICRegistered(string memory _ic) public view returns (bool) {
+    function isICRegistered(string calldata _ic) external view returns (bool) {
         bytes32 icHash = keccak256(abi.encodePacked(_ic));
         return usedICs[icHash];
     }
     
-    function isEmailRegistered(string memory _email) public view returns (bool) {
+    function isEmailRegistered(string calldata _email) external view returns (bool) {
         return usedEmails[_email];
     }
     
@@ -453,10 +441,10 @@ contract Contract {
     // Voter Logics //
     //////////////////
     function registerVoter(
-        string memory _name,
-        string memory _ic,
-        string memory _email
-    ) public returns (bytes32) {
+        string calldata _name,
+        string calldata _ic,
+        string calldata _email
+    ) external returns (bytes32) {
         if (voters[msg.sender].isRegistered) revert AlreadyRegistered();
 
         bytes32 icHash = keccak256(abi.encodePacked(_ic));
@@ -492,64 +480,63 @@ contract Contract {
         return verificationCode;
     }
     
+    // Shared internal validation for registration-time ZKP proofs (regCheck circuit, electionId=0).
+    function _validateRegZKPSignals(
+        uint[2] calldata _pA,
+        uint[2][2] calldata _pB,
+        uint[2] calldata _pC,
+        uint[9] calldata _pubSignals
+    ) internal view {
+        if (address(voteVerifier) == address(0)) revert NoVerifier();
+        if (_pubSignals[0] != 18) revert InvalidAge();
+        if (_pubSignals[2] != 0) revert InvalidElectionId();
+        if (_pubSignals[3] == 0) revert InvalidCommitment();
+        (uint256 y, uint256 m, uint256 d) = _timestampToDate(block.timestamp);
+        if (_pubSignals[4] != y) revert InvalidDate();
+        if (_pubSignals[5] != m) revert InvalidDate();
+        if (_pubSignals[6] != d) revert InvalidDate();
+        if (!voteVerifier.verifyProof(_pA, _pB, _pC, _pubSignals)) revert ProofFailed();
+    }
+
     // ZKP-based verification for voters (uses regCheck circuit — Verifier.sol)
-    // Public signals (9 total): [ageThreshold, nullifierHash, electionId, voterCommitment,
-    //                  currentYear, currentMonth, currentDay, numCandidates, choiceCommitment]
     // electionId must be 0 (registration sentinel); numCandidates=1, candidateIndex=0 (dummy).
     function verifyVoterWithZKP(
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
         uint[9] calldata _pubSignals
-    ) public {
+    ) external {
         if (!voters[msg.sender].isRegistered) revert NotRegistered();
         if (voters[msg.sender].status != 0) revert NotPending();
-        if (address(voteVerifier) == address(0)) revert NoVerifier();
-
-        if (_pubSignals[0] != 18) revert InvalidAge();
-        if (_pubSignals[2] != 0) revert InvalidElectionId();
-        if (_pubSignals[3] == 0) revert InvalidCommitment();
-
-        (uint256 blockYear, uint256 blockMonth, uint256 blockDay) = _timestampToDate(block.timestamp);
-        if (_pubSignals[4] != blockYear) revert InvalidDate();
-        if (_pubSignals[5] != blockMonth) revert InvalidDate();
-        if (_pubSignals[6] != blockDay) revert InvalidDate();
-
-        if (!voteVerifier.verifyProof(_pA, _pB, _pC, _pubSignals)) revert ProofFailed();
-
-        // Store the voter's Poseidon commitment on-chain
-        // This enables anonymous voting without linking address to election participation
+        _validateRegZKPSignals(_pA, _pB, _pC, _pubSignals);
         bytes32 commitment = bytes32(_pubSignals[3]);
         if (!voterCommitments[commitment]) {
             voterCommitments[commitment] = true;
             emit VoterCommitmentStored(commitment, block.timestamp);
         }
-
-        // Mark voter as VERIFIED
         voters[msg.sender].status = 1;
         voters[msg.sender].verifiedAt = block.timestamp;
-
         emit VoterVerified(msg.sender, block.timestamp);
     }
 
-    function isVoterRegistered(address _wallet) public view returns (bool) {
+    function isVoterRegistered(address _wallet) external view returns (bool) {
         return voters[_wallet].isRegistered;
     }
 
     // Combined function to check if a wallet is registered as voter or candidate
-    function isWalletRegistered(address _wallet) public view returns (bool) {
+    function isWalletRegistered(address _wallet) external view returns (bool) {
         return voters[_wallet].isRegistered || candidates[_wallet].isRegistered;
     }
 
-    function getAllVoterAddresses() public view returns (address[] memory) {
+    function getAllVoterAddresses() external view returns (address[] memory) {
         return voterAddresses;
     }
 
-    function getTotalRegisteredVoters() public view returns (uint256) {
+    function getTotalRegisteredVoters() external view returns (uint256) {
         return voterAddresses.length;
     }
     
-    function getVoterInfo(address _wallet) public view returns (
+    function getVoterInfo(address _wallet) external view returns (
         string memory name,
         string memory email,
         string memory status,
@@ -606,12 +593,12 @@ contract Contract {
 
     
     function registerCandidate(
-        string memory _name,
-        string memory _ic,
-        string memory _email,
-        string memory _party,
-        string memory _manifesto
-    ) public returns (bytes32) {
+        string calldata _name,
+        string calldata _ic,
+        string calldata _email,
+        string calldata _party,
+        string calldata _manifesto
+    ) external returns (bytes32) {
         if (candidates[msg.sender].isRegistered) revert AlreadyRegistered();
         bytes32 icHash = keccak256(abi.encodePacked(_ic));
         if (usedICs[icHash]) revert ICAlreadyUsed();
@@ -655,42 +642,24 @@ contract Contract {
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
         uint[9] calldata _pubSignals
-    ) public {
+    ) external {
         if (!candidates[msg.sender].isRegistered) revert NotRegistered();
         if (candidates[msg.sender].status != 0) revert NotPending();
-        if (address(voteVerifier) == address(0)) revert NoVerifier();
-
-        if (_pubSignals[0] != 18) revert InvalidAge();
-        if (_pubSignals[2] != 0) revert InvalidElectionId();
-        if (_pubSignals[3] == 0) revert InvalidCommitment();
-
-        (uint256 blockYear, uint256 blockMonth, uint256 blockDay) = _timestampToDate(block.timestamp);
-        if (_pubSignals[4] != blockYear) revert InvalidDate();
-        if (_pubSignals[5] != blockMonth) revert InvalidDate();
-        if (_pubSignals[6] != blockDay) revert InvalidDate();
-
-        if (!voteVerifier.verifyProof(_pA, _pB, _pC, _pubSignals)) revert ProofFailed();
-
-        // Mark as verified
+        _validateRegZKPSignals(_pA, _pB, _pC, _pubSignals);
         candidates[msg.sender].status = 1;
         candidates[msg.sender].verifiedAt = block.timestamp;
-
         emit CandidateVerified(msg.sender, block.timestamp);
     }
 
-    function isCandidateRegistered(address _wallet) public view returns (bool) {
+    function isCandidateRegistered(address _wallet) external view returns (bool) {
         return candidates[_wallet].isRegistered;
     }
     
-    function getAllCandidateAddresses() public view returns (address[] memory) {
+    function getAllCandidateAddresses() external view returns (address[] memory) {
         return candidateAddresses;
     }
     
-    function getTotalRegisteredCandidates() public view returns (uint256) {
-        return candidateAddresses.length;
-    }
-    
-    function getCandidateInfo(address _wallet) public view returns (
+    function getCandidateInfo(address _wallet) external view returns (
         string memory name,
         string memory email,
         string memory party,
@@ -713,48 +682,11 @@ contract Contract {
         );
     }
 
-    // function getCandidatesBatch(uint256 _start, uint256 _count) public view returns (
-    //     address[] memory wallets,
-    //     string[] memory names,
-    //     string[] memory emails,
-    //     string[] memory statuses,
-    //     uint256[] memory registeredAts
-    // ) {
-    //     require(_start < candidateAddresses.length, "!start");
-        
-    //     uint256 end = _start + _count;
-    //     if (end > candidateAddresses.length) {
-    //         end = candidateAddresses.length;
-    //     }
-        
-    //     uint256 resultCount = end - _start;
-        
-    //     wallets = new address[](resultCount);
-    //     names = new string[](resultCount);
-    //     emails = new string[](resultCount);
-    //     statuses = new string[](resultCount);
-    //     registeredAts = new uint256[](resultCount);
-        
-    //     for (uint256 i = 0; i < resultCount; i++) {
-    //         address candidateAddress = candidateAddresses[_start + i];
-    //         Candidate memory candidate = candidates[candidateAddress];
-            
-    //         wallets[i] = candidate.wallet;
-    //         names[i] = candidate.name;
-    //         emails[i] = candidate.email;
-    //         statuses[i] = candidate.status;
-    //         registeredAts[i] = candidate.registeredAt;
-    //     }
-        
-    //     return (wallets, names, emails, statuses, registeredAts);
-    // }
-
-
     function registerOrganizer(
-        string memory _organizationName,
-        string memory _email,
-        string memory _description
-    ) public returns (bool) {
+        string calldata _organizationName,
+        string calldata _email,
+        string calldata _description
+    ) external returns (bool) {
         if (organizers[msg.sender].isRegistered) revert AlreadyRegistered();
         if (bytes(_organizationName).length == 0) revert EmptyInput();
         if (bytes(_email).length == 0) revert EmptyInput();
@@ -776,7 +708,7 @@ contract Contract {
         return true;
     }
 
-    function verifyOrganizer(address _applicant) public onlyAdmin returns (bool) {
+    function verifyOrganizer(address _applicant) external onlyAdmin returns (bool) {
         if (!organizers[_applicant].isRegistered) revert NotRegistered();
         if (organizers[_applicant].status != 0) revert AlreadyProcessed();
         
@@ -787,7 +719,7 @@ contract Contract {
         return true;
     }
 
-    function getOrganizerInfo(address _applicant) public view returns (
+    function getOrganizerInfo(address _applicant) external view returns (
         string memory organizationName,
         string memory email,
         string memory description,
@@ -807,11 +739,11 @@ contract Contract {
         );
     }
 
-    function getAllOrganizers() public view returns (address[] memory) {
+    function getAllOrganizers() external view returns (address[] memory) {
         return organizerList;
     }
 
-    function getPendingOrganizers() public view returns (address[] memory) {
+    function getPendingOrganizers() external view returns (address[] memory) {
         uint256 pendingCount = 0;
         for (uint256 i = 0; i < organizerList.length; i++) {
             if (organizers[organizerList[i]].status == 0) {
@@ -836,22 +768,22 @@ contract Contract {
         return organizers[_address].isRegistered && organizers[_address].status == 1;
     }
 
-    function isOrganizerRegistered(address _address) public view returns (bool) {
+    function isOrganizerRegistered(address _address) external view returns (bool) {
         return organizers[_address].isRegistered;
     }
 
-    function isAdmin(address _address) public view returns (bool) {
+    function isAdmin(address _address) external view returns (bool) {
         return _address == admin;
     }
 
     function createElection(
-        string memory _title,
-        string memory _description,
+        string calldata _title,
+        string calldata _description,
         uint256 _nominationStartTime,
         uint256 _nominationEndTime,
         uint256 _startTime,
         uint256 _endTime
-    ) public returns (uint256) {
+    ) external returns (uint256) {
         if (!isOrganizer(msg.sender)) revert Unauthorized();
         if (bytes(_title).length == 0) revert EmptyInput();
         if (_nominationStartTime <= block.timestamp) revert TimingError();
@@ -893,7 +825,7 @@ contract Contract {
         return newElectionId;
     }
     
-    function getElectionInfo(uint256 _electionId) public view returns (
+    function getElectionInfo(uint256 _electionId) external view returns (
         string memory title,
         string memory description,
         address organizer,
@@ -920,15 +852,15 @@ contract Contract {
         );
     }
     
-    function getAllElectionIds() public view returns (uint256[] memory) {
+    function getAllElectionIds() external view returns (uint256[] memory) {
         return electionIds;
     }
     
-    function getTotalElections() public view returns (uint256) {
+    function getTotalElections() external view returns (uint256) {
         return electionCounter;
     }
     
-    function getElectionsByOrganizer(address _organizer) public view returns (uint256[] memory) {
+    function getElectionsByOrganizer(address _organizer) external view returns (uint256[] memory) {
         uint256 count = 0;
         for (uint256 i = 0; i < electionIds.length; i++) {
             if (elections[electionIds[i]].organizer == _organizer) {
@@ -947,32 +879,11 @@ contract Contract {
         return organizerElections;
     }
     
-    function getActiveElections() public view returns (uint256[] memory) {
-        uint256 count = 0;
-        for (uint256 i = 0; i < electionIds.length; i++) {
-            Election memory election = elections[electionIds[i]];
-            if (election.isActive && 
-                block.timestamp >= election.startTime && 
-                block.timestamp <= election.endTime) {
-                count++;
-            }
-        }
-        uint256[] memory activeElections = new uint256[](count);
-        uint256 currentIndex = 0;
-        for (uint256 i = 0; i < electionIds.length; i++) {
-            Election memory election = elections[electionIds[i]];
-            if (election.isActive && 
-                block.timestamp >= election.startTime && 
-                block.timestamp <= election.endTime) {
-                activeElections[currentIndex] = electionIds[i];
-                currentIndex++;
-            }
-        }
-        
-        return activeElections;
+    function getActiveElections() external view returns (uint256[] memory) {
+        return electionIds;
     }
 
-    function applyToElection(uint256 _electionId) public returns (bool) {
+    function applyToElection(uint256 _electionId) external returns (bool) {
         if (_electionId > electionCounter) revert ElectionNotFound();
         Election memory election = elections[_electionId];
         if (
@@ -990,12 +901,12 @@ contract Contract {
         return true;
     }
     
-    function getElectionCandidateApplicants(uint256 _electionId) public view returns (address[] memory) {
+    function getElectionCandidateApplicants(uint256 _electionId) external view returns (address[] memory) {
         if (_electionId > electionCounter) revert ElectionNotFound();
         return electionCandidateApplicants[_electionId];
     }
     
-    function approveCandidateForElection(uint256 _electionId, address _candidateWallet) public returns (bool) {
+    function approveCandidateForElection(uint256 _electionId, address _candidateWallet) external returns (bool) {
         if (_electionId > electionCounter) revert ElectionNotFound();
         Election memory election = elections[_electionId];
         if (msg.sender != election.organizer && msg.sender != admin) revert Unauthorized();
@@ -1008,7 +919,7 @@ contract Contract {
         return true;
     }
     
-    function rejectCandidateForElection(uint256 _electionId, address _candidateWallet) public returns (bool) {
+    function rejectCandidateForElection(uint256 _electionId, address _candidateWallet) external returns (bool) {
         if (_electionId > electionCounter) revert ElectionNotFound();
         Election memory election = elections[_electionId];
         if (msg.sender != election.organizer && msg.sender != admin) revert Unauthorized();
@@ -1065,12 +976,12 @@ contract Contract {
      */
     function vote(
         uint256 _electionId,
-        string memory _ipfsCID,
+        string calldata _ipfsCID,
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
         uint[9] calldata _pubSignals
-    ) public returns (bool) {
+    ) external returns (bool) {
         if (_electionId > electionCounter) revert ElectionNotFound();
         Election storage election = elections[_electionId];
         if (block.timestamp < election.startTime || block.timestamp > election.endTime) revert ElectionNotOpen();
@@ -1134,7 +1045,7 @@ contract Contract {
      * @dev Get the IPFS CID of an anonymous ZKP vote by its nullifier.
      */
     function getZKPVote(uint256 _electionId, bytes32 _nullifier)
-        public
+        external
         view
         returns (string memory)
     {
@@ -1145,7 +1056,7 @@ contract Contract {
      * @dev Get all nullifiers (anonymous voter tokens) for an election — used for tally.
      */
     function getZKPVoteNullifiers(uint256 _electionId)
-        public
+        external
         view
         returns (bytes32[] memory)
     {
@@ -1159,7 +1070,7 @@ contract Contract {
      *      and comparing against this value — without revealing their choice on-chain.
      */
     function getChoiceCommitment(uint256 _electionId, bytes32 _nullifier)
-        public
+        external
         view
         returns (bytes32)
     {
@@ -1171,12 +1082,8 @@ contract Contract {
      *      Caller computes nullifier = Poseidon(voterSecret, electionId) client-side.
      *      Wallet address is never stored — voting is fully anonymous.
      */
-    function hasVoterVoted(uint256 _electionId, bytes32 _nullifier) public view returns (bool) {
-        return nullifierUsed[_electionId][_nullifier];
-    }
-
     
-    function getElectionTotalVotes(uint256 _electionId) public view returns (uint256) {
+    function getElectionTotalVotes(uint256 _electionId) external view returns (uint256) {
         if (_electionId > electionCounter) revert ElectionNotFound();
         return elections[_electionId].totalVotes;
     }
@@ -1189,7 +1096,7 @@ contract Contract {
      * @param _electionId The election ID
      * @param _decryptedResult JSON-encoded decrypted tally (e.g. per-candidate totals)
      */
-    function publishResults(uint256 _electionId, string memory _decryptedResult) public {
+    function publishResults(uint256 _electionId, string calldata _decryptedResult) external {
         if (elections[_electionId].id == 0) revert ElectionNotFound();
         if (msg.sender != admin && msg.sender != elections[_electionId].organizer) revert Unauthorized();
         if (!elections[_electionId].tallyStored) revert TallyNotStored();
@@ -1206,7 +1113,7 @@ contract Contract {
      * @dev Get the published results for an election
      * @param _electionId The election ID
      */
-    function getResults(uint256 _electionId) public view returns (
+    function getResults(uint256 _electionId) external view returns (
         string memory decryptedResult,
         bool resultsPublished,
         uint256 shareCount
@@ -1215,7 +1122,7 @@ contract Contract {
         return (
             elections[_electionId].decryptedResult,
             elections[_electionId].resultsPublished,
-            decryptionShareCount[_electionId]
+            0
         );
     }
     

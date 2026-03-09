@@ -97,6 +97,7 @@ async function fetchEncryptedVotes(contract, ipfsManager, electionId) {
                 encryptedVotes.push({
                     voter: nullifier,
                     encryptedVote: votePackage.encrypted_vote, // VotingData ciphertext
+                    vote_block: votePackage.vote_block,         // B for slot extraction
                     timestamp: Date.now()
                 });
 
@@ -132,15 +133,15 @@ async function performHomomorphicAggregation(publicKeyN, encryptedVotes, numCand
     console.log('   Paillier: E(RADIX^a) × E(RADIX^b) = E(RADIX^a + RADIX^b)\n');
 
     try {
-        const radix = encryptedVotes[0].radix || 100000;
-        console.log(`   RADIX: ${radix}  (supports up to ${radix - 1} votes per candidate)`);
+        const vote_block = encryptedVotes[0].vote_block || 100000;
+        console.log(`   vote_block: ${vote_block}  (supports up to ${vote_block - 1} votes per candidate)`);
         console.log(`   Candidates: ${numCandidates}`);
 
         const tempFile = path.join(__dirname, 'temp_encrypted_votes.json');
         const votesData = {
             public_key_n: publicKeyN,
             num_candidates: numCandidates,
-            radix: radix,
+            vote_block: vote_block,
             encrypted_votes: encryptedVotes.map(v => v.encryptedVote) // flat array of ciphertexts
         };
 
@@ -159,11 +160,11 @@ async function performHomomorphicAggregation(publicKeyN, encryptedVotes, numCand
         console.log(`   Votes aggregated: ${result.vote_count}`);
         console.log(`   🔒 Result stays encrypted until Phase 4 threshold decryption`);
 
-        // Store as JSON object so Phase 4 has radix + num_candidates for extraction
+        // Store as JSON object so Phase 4 has vote_block + num_candidates for extraction
         return JSON.stringify({
             encrypted_total: result.encrypted_total,
             num_candidates: numCandidates,
-            radix: radix
+            vote_block: vote_block
         });
     } catch (error) {
         console.error('❌ Failed to perform aggregation:', error.message);
@@ -225,7 +226,6 @@ async function verifyStoredTally(contract, electionId) {
         try {
             const tallyObj = JSON.parse(tallyData.encryptedTally);
             console.log(`   Encrypted total    : ${tallyObj.encrypted_total.substring(0, 50)}...`);
-            console.log(`   Voter identity sum : ${tallyObj.voter_identity_sum.substring(0, 40)}...`);
             console.log(`   Num candidates     : ${tallyObj.num_candidates}`);
             console.log(`   Vote block         : ${tallyObj.vote_block}`);
         } catch (_) {

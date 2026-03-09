@@ -164,6 +164,7 @@ export default function RoleSelectionModal({ isOpen, onSelectRole, onClose }) {
               Create and manage elections for your organization
             </div>
           </button>
+
         </div>
       </div>
     </div>

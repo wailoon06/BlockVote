@@ -1,11 +1,17 @@
 import contract from "../contract.json";
 
+// Singleton Web3 instance — avoids re-registering MetaMask message listeners on every call
+let _web3 = null;
+
 export const getWeb3 = async () => {
   if (typeof window.ethereum === 'undefined') {
     throw new Error('MetaMask not found');
   }
-  const Web3 = (await import('web3')).default;
-  return new Web3(window.ethereum);
+  if (!_web3) {
+    const Web3 = (await import('web3')).default;
+    _web3 = new Web3(window.ethereum);
+  }
+  return _web3;
 };
 
 export const getDeployedContract = async () => {

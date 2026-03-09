@@ -5,8 +5,8 @@ import MessageAlert from '../components/MessageAlert';
 import Navbar from '../components/Navbar';
 import IPFSClient from '../utils/ipfsClient';
 import { performHomomorphicAddition } from '../utils/homomorphicAggregator';
-import { extractVoteCounts, decryptShareY, thresholdDecrypt } from '../utils/thresholdDecryption';
 import { computeVoteBlock } from '../utils/voteEncryption';
+import { decryptShareY, reconstructSecret, thresholdDecrypt, extractVoteCounts } from '../utils/thresholdDecryption';
 
 export default function OrganizerManageElection() {
   const navigate = useNavigate();
@@ -23,10 +23,11 @@ export default function OrganizerManageElection() {
   const [processing, setProcessing] = useState(null);
   const [aggregating, setAggregating] = useState(false);
   const [tallyStatus, setTallyStatus] = useState(null);
-  const [decrypting, setDecrypting] = useState(false);
   const [phase4Status, setPhase4Status] = useState(null);
-  // Off-chain decryption: share files loaded by organizer
-  const [uploadedShares, setUploadedShares] = useState([]); // [{data, passphrase, fileName}]
+
+  // Threshold decryption state
+  const [shareInputs, setShareInputs] = useState([{ file: null, passphrase: '' }]);
+  const [decrypting, setDecrypting] = useState(false);
 
   useEffect(() => {
     if (!electionId) {
@@ -226,116 +227,6 @@ export default function OrganizerManageElection() {
     }
   };
 
-  // ── Add a trustee share file to the collection ──────────────────────────
-  const handleAddShareFile = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const json = JSON.parse(text);
-      if (typeof json.x === 'undefined') throw new Error('Missing x field');
-      if (typeof json.y === 'undefined' && typeof json.encrypted_y === 'undefined')
-        throw new Error('Missing y / encrypted_y field');
-      if (uploadedShares.some(s => s.data.x === json.x))
-        throw new Error(`Share x=${json.x} is already loaded.`);
-      setUploadedShares(prev => [...prev, { data: json, passphrase: '', fileName: file.name }]);
-      setMessage(`Share x=${json.x} loaded`);
-      setMessageType('info');
-    } catch (err) {
-      setMessage(`Failed to load share: ${err.message}`);
-      setMessageType('danger');
-    }
-    e.target.value = '';
-  };
-
-  // ── Organizer: reconstruct λ from shares off-chain, decrypt, publish ─────
-  const handleDecryptAndPublish = async () => {
-    if (decrypting) return;
-    setDecrypting(true);
-    setMessage('Reconstructing private key and decrypting...');
-    setMessageType('info');
-    try {
-      const { deployedContract } = await getDeployedContract();
-
-      const thresholdBN = await deployedContract.methods.threshold().call();
-      const required = Number(thresholdBN);
-      if (uploadedShares.length < required)
-        throw new Error(`Need at least ${required} share files. Currently have ${uploadedShares.length}.`);
-
-      // Decrypt each share's y value (AES or plaintext)
-      const shares = [];
-      for (let i = 0; i < uploadedShares.length; i++) {
-        const { data, passphrase } = uploadedShares[i];
-        let y;
-        if (data.encrypted_y) {
-          if (!passphrase?.trim())
-            throw new Error(`Passphrase required for share x=${data.x}.`);
-          y = await decryptShareY(data.encrypted_y, passphrase);
-        } else {
-          y = String(data.y);
-        }
-        shares.push({ x: data.x, y, prime: data.prime });
-      }
-
-      const publicKeyN = await deployedContract.methods.getPaillierPublicKey().call();
-      const tallyData  = await deployedContract.methods.getEncryptedTally(electionId).call();
-      let encryptedTally, storedVoteBlock;
-      try {
-        const obj = JSON.parse(tallyData.encryptedTally);
-        encryptedTally  = obj.encrypted_total;
-        storedVoteBlock = obj.vote_block;
-      } catch {
-        encryptedTally  = tallyData.encryptedTally;
-      }
-      if (!encryptedTally) throw new Error('Encrypted tally not on blockchain.');
-
-      // Reconstruct λ via Shamir and decrypt with standard Paillier.
-      // λ is scoped inside thresholdDecrypt – never returned or stored.
-      const { plaintext } = thresholdDecrypt(encryptedTally, shares, publicKeyN);
-
-      // Zero out plaintext y values from memory immediately after use
-      shares.forEach(s => { s.y = null; });
-
-      setMessage('Publishing results...');
-      const approvedCandidates = await deployedContract.methods.getApprovedCandidates(electionId).call();
-      const voteBlock = storedVoteBlock
-        ? BigInt(storedVoteBlock)
-        : computeVoteBlock(await deployedContract.methods.getTotalRegisteredVoters().call());
-
-      const perCandidateVotes = extractVoteCounts(plaintext, approvedCandidates.length, voteBlock);
-
-      const bigIntReplacer = (_, v) => typeof v === 'bigint' ? v.toString() : v;
-      const resultPayload = JSON.stringify({
-        election_id:         electionId,
-        decrypted_total:     plaintext.toString(),
-        total_votes:         tallyStatus.totalVotes,
-        per_candidate_votes: perCandidateVotes,
-        candidates:          approvedCandidates,
-        method:              'Threshold Shamir + Paillier (off-chain)',
-        shares_used:         shares.map(s => ({ x: s.x })),
-        published_at:        new Date().toISOString()
-      }, bigIntReplacer);
-
-      await deployedContract.methods
-        .publishResults(electionId, resultPayload)
-        .send({ from: walletAddress });
-
-      setMessage('✅ Results published successfully!');
-      setMessageType('success');
-      // Clear shares (including passphrases) from state after successful publish
-      setUploadedShares([]);
-      await loadTallyStatus(deployedContract);
-      await loadPhase4Status(deployedContract);
-    } catch (err) {
-      // Sanitise error messages – never expose raw crypto values
-      const safeMsg = err.message?.replace(/\d{50,}/g, '[redacted]') || 'Failed to decrypt and publish';
-      setMessage(safeMsg);
-      setMessageType('danger');
-    } finally {
-      setDecrypting(false);
-    }
-  };
-
   const handleAggregateVotes = async () => {
     if (aggregating) return;
     
@@ -482,6 +373,82 @@ export default function OrganizerManageElection() {
       setMessageType('danger');
     } finally {
       setAggregating(false);
+    }
+  };
+
+  const handleDecryptAndPublish = async () => {
+    const validInputs = shareInputs.filter(s => s.file !== null);
+    if (validInputs.length < 2) {
+      setMessage('Upload at least 2 trustee share files to perform threshold decryption.');
+      setMessageType('danger');
+      return;
+    }
+
+    setDecrypting(true);
+    setMessage('Decrypting shares...');
+    setMessageType('info');
+
+    try {
+      const { deployedContract } = await getDeployedContract();
+
+      // 1. Parse and decrypt each share
+      const shares = [];
+      for (const input of validInputs) {
+        const text = await input.file.text();
+        const shareData = JSON.parse(text);
+        let y;
+        if (shareData.encrypted_y) {
+          if (!input.passphrase.trim()) throw new Error(`Passphrase required for share x=${shareData.x}.`);
+          y = await decryptShareY(shareData.encrypted_y, input.passphrase);
+        } else {
+          y = String(shareData.y);
+        }
+        shares.push({ x: shareData.x, y, prime: shareData.prime });
+      }
+
+      // 2. Reconstruct lambda and decrypt tally
+      setMessage('Reconstructing private key and decrypting tally...');
+      const tally = await deployedContract.methods.getEncryptedTally(electionId).call();
+      if (!tally.tallyStored) throw new Error('Tally not stored yet.');
+
+      let tallyObj;
+      try { tallyObj = JSON.parse(tally.encryptedTally); } catch { tallyObj = { encrypted_total: tally.encryptedTally }; }
+
+      const publicKeyN = await deployedContract.methods.getPaillierPublicKey().call();
+      const { plaintext } = thresholdDecrypt(tallyObj.encrypted_total, shares, publicKeyN);
+
+      // 3. Extract per-candidate vote counts
+      const approvedCandidates = await deployedContract.methods.getApprovedCandidates(electionId).call();
+      const voteBlock = tallyObj.vote_block
+        ? BigInt(tallyObj.vote_block)
+        : computeVoteBlock(await deployedContract.methods.getTotalRegisteredVoters().call());
+
+      const perCandidateVotes = extractVoteCounts(plaintext, approvedCandidates.length, voteBlock);
+
+      // 4. Publish results on-chain
+      setMessage('Publishing results on-chain...');
+      const resultPayload = JSON.stringify({
+        election_id: electionId,
+        total_votes: Number(tally.totalVotes),
+        per_candidate_votes: perCandidateVotes,
+        candidates: approvedCandidates,
+        method: 'Threshold Paillier — Trustee SSS',
+        published_at: new Date().toISOString(),
+      });
+
+      await deployedContract.methods
+        .publishResults(electionId, resultPayload)
+        .send({ from: walletAddress });
+
+      setMessage('✅ Results published successfully!');
+      setMessageType('success');
+      setShareInputs([{ file: null, passphrase: '' }]);
+      await loadPhase4Status(deployedContract);
+    } catch (err) {
+      setMessage('Decryption failed: ' + err.message.replace(/\d{50,}/g, '[redacted]'));
+      setMessageType('danger');
+    } finally {
+      setDecrypting(false);
     }
   };
 
@@ -942,7 +909,7 @@ export default function OrganizerManageElection() {
                     Vote Tallying &amp; Results
                   </h2>
                   <p style={{ color: '#64748b', fontSize: '15px', margin: 0 }}>
-                    Collect share files from trustees (offline), reconstruct the private key, then publish the decrypted results.
+                    Threshold decryption via trustee shares. After voting ends and votes are aggregated, collect share files from trustees to decrypt and publish results.
                   </p>
                 </div>
 
@@ -964,16 +931,12 @@ export default function OrganizerManageElection() {
                             <div style={{ fontSize: '13px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>Decrypted Result</div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                               <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Decrypted Total</div>
-                                <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b', fontFamily: 'monospace' }}>{parsed.decrypted_total}</div>
-                              </div>
-                              <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                                 <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Total Votes</div>
                                 <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>{parsed.total_votes}</div>
                               </div>
                               <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Shares Used</div>
-                                <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>{parsed.shares_used?.length ?? phase4Status.shareCount}</div>
+                                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>Candidates</div>
+                                <div style={{ fontSize: '20px', fontWeight: '700', color: '#1e293b' }}>{parsed.candidates?.length ?? '—'}</div>
                               </div>
                             </div>
                             <div style={{ marginTop: '12px', fontSize: '12px', color: '#94a3b8' }}>
@@ -1018,68 +981,59 @@ export default function OrganizerManageElection() {
                         {aggregating && <div style={{ width: '18px', height: '18px', border: '3px solid #93c5fd', borderTop: '3px solid #3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
                       </div>
 
-                      {/* Step 3: Collect shares & decrypt */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', borderRadius: '10px', backgroundColor: decrypting ? '#ede9fe' : '#f1f5f9', border: `1px solid ${decrypting ? '#a78bfa' : '#e2e8f0'}` }}>
-                        <span style={{ fontSize: '22px' }}>{decrypting ? '⚙️' : '○'}</span>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b' }}>Step 3 — Collect Shares &amp; Decrypt</div>
-                          <div style={{ fontSize: '13px', color: '#64748b' }}>
-                            {decrypting ? 'Reconstructing private key and decrypting...' : tallyStatus?.tallyStored ? 'Upload trustee share files below to decrypt the tally' : 'Waiting for aggregation'}
-                          </div>
-                        </div>
-                        {decrypting && <div style={{ width: '18px', height: '18px', border: '3px solid #a78bfa', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
-                      </div>
                     </div>
 
-                    {/* ── SHARE COLLECTION PANEL ── */}
+                    {/* Step 3: Threshold Decryption */}
                     {tallyStatus?.tallyStored && (
-                      <div style={{ padding: '20px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
-                        <div style={{ fontSize: '15px', fontWeight: '700', color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span>🔑</span> Collect Trustee Shares &amp; Decrypt Results
+                      <div style={{ marginTop: '8px', padding: '20px', backgroundColor: '#fefce8', borderRadius: '10px', border: '1px solid #fcd34d' }}>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
+                          🔓 Step 3 — Threshold Decryption &amp; Publish
                         </div>
-                        <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '14px', lineHeight: '1.6' }}>
-                          Obtain share files (<code>trustee_shares/trustee_N.json</code>) from trustees. Upload at least the threshold number, enter passphrases if required, then click Decrypt &amp; Publish.
-                        </div>
-
-                        {/* Loaded shares */}
-                        {uploadedShares.length > 0 && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px' }}>
-                            {uploadedShares.map((s, idx) => (
-                              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', backgroundColor: 'white', border: '1px solid #d1fae5', borderRadius: '8px' }}>
-                                <span style={{ fontSize: '18px' }}>📄</span>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: '13px', fontWeight: '600', color: '#166534' }}>Share x={s.data.x} — {s.fileName}</div>
-                                  {s.data.encrypted_y && (
-                                    <input
-                                      type="password"
-                                      placeholder="Enter passphrase"
-                                      value={s.passphrase}
-                                      onChange={e => setUploadedShares(prev => prev.map((item, i) => i === idx ? { ...item, passphrase: e.target.value } : item))}
-                                      style={{ marginTop: '6px', width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }}
-                                    />
-                                  )}
-                                </div>
-                                <button onClick={() => setUploadedShares(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px', lineHeight: 1 }}>✕</button>
-                              </div>
-                            ))}
+                        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', margin: '0 0 16px 0' }}>
+                          Upload at least 2 trustee share files (JSON). If a share is passphrase-protected, enter the passphrase provided by the trustee.
+                        </p>
+                        {shareInputs.map((input, idx) => (
+                          <div key={idx} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <input
+                              type="file"
+                              accept=".json"
+                              onChange={e => {
+                                const file = e.target.files[0] || null;
+                                setShareInputs(prev => prev.map((s, i) => i === idx ? { ...s, file } : s));
+                              }}
+                              style={{ fontSize: '13px', flex: '1 1 200px' }}
+                            />
+                            <input
+                              type="password"
+                              placeholder="Passphrase (if encrypted)"
+                              value={input.passphrase}
+                              onChange={e => {
+                                const passphrase = e.target.value;
+                                setShareInputs(prev => prev.map((s, i) => i === idx ? { ...s, passphrase } : s));
+                              }}
+                              style={{ fontSize: '13px', flex: '1 1 180px', padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: '6px' }}
+                            />
+                            {shareInputs.length > 1 && (
+                              <button
+                                onClick={() => setShareInputs(prev => prev.filter((_, i) => i !== idx))}
+                                style={{ padding: '6px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+                              >✕</button>
+                            )}
                           </div>
-                        )}
-
-                        {/* Add share file */}
-                        <label style={{ display: 'block', padding: '12px 16px', backgroundColor: 'white', border: '2px dashed #cbd5e1', borderRadius: '8px', cursor: 'pointer', textAlign: 'center', fontSize: '14px', color: '#475569', marginBottom: '12px' }}
-                          onMouseEnter={e => e.currentTarget.style.borderColor = '#94a3b8'}
-                          onMouseLeave={e => e.currentTarget.style.borderColor = '#cbd5e1'}>
-                          ➕ Add trustee share file (JSON)
-                          <input type="file" accept=".json" onChange={handleAddShareFile} key={uploadedShares.length} style={{ display: 'none' }} />
-                        </label>
-
-                        <button
-                          onClick={handleDecryptAndPublish}
-                          disabled={decrypting || uploadedShares.length === 0}
-                          style={{ width: '100%', padding: '12px', backgroundColor: (decrypting || uploadedShares.length === 0) ? '#e2e8f0' : '#6366f1', color: (decrypting || uploadedShares.length === 0) ? '#94a3b8' : 'white', border: 'none', borderRadius: '8px', fontSize: '15px', fontWeight: '700', cursor: (decrypting || uploadedShares.length === 0) ? 'not-allowed' : 'pointer' }}
-                        >
-                          {decrypting ? '⚙️ Decrypting...' : '🔓 Decrypt & Publish Results'}
-                        </button>
+                        ))}
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                          <button
+                            onClick={() => setShareInputs(prev => [...prev, { file: null, passphrase: '' }])}
+                            style={{ padding: '8px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
+                          >+ Add Share File</button>
+                          <button
+                            onClick={handleDecryptAndPublish}
+                            disabled={decrypting}
+                            style={{ padding: '8px 16px', backgroundColor: decrypting ? '#94a3b8' : '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: decrypting ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
+                          >
+                            {decrypting ? '⚙️ Decrypting...' : '🔓 Decrypt & Publish Results'}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
