@@ -1090,6 +1090,31 @@ contract Contract {
     
     // ===== PHASE 4: Threshold Decryption & Results =====
     
+    mapping(uint256 => mapping(address => string)) public partialDecryptions;
+    mapping(uint256 => address[]) public partialDecryptionSubmitters;
+
+    event PartialDecryptionSubmitted(uint256 indexed electionId, address indexed trustee);
+
+    /**
+     * @dev Trustees submit their partial decryptions after local computation
+     */
+    function submitPartialDecryption(uint256 _electionId, string calldata _pd) external onlyTrustee {
+        if (!elections[_electionId].tallyStored) revert TallyNotStored();
+        if (bytes(partialDecryptions[_electionId][msg.sender]).length == 0) {
+            partialDecryptionSubmitters[_electionId].push(msg.sender);
+        }
+        partialDecryptions[_electionId][msg.sender] = _pd;
+        emit PartialDecryptionSubmitted(_electionId, msg.sender);
+    }
+
+    function getPartialDecryptionSubmitters(uint256 _electionId) external view returns (address[] memory) {
+        return partialDecryptionSubmitters[_electionId];
+    }
+
+    function getPartialDecryption(uint256 _electionId, address _trustee) external view returns (string memory) {
+        return partialDecryptions[_electionId][_trustee];
+    }
+
     /**
      * @dev Publish the decrypted election results on-chain.
      *      Requires that enough decryption shares have been registered.

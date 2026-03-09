@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import MessageAlert from '../components/MessageAlert';
-import IPFSClient from '../utils/ipfsClient';
 import { getDeployedContract } from '../utils/contractUtils';
+import { decryptShareY, computeTrusteePartialDecryption } from '../utils/thresholdDecryption';
 
 export default function TrusteeDashboard() {
   const navigate = useNavigate();
@@ -15,15 +15,15 @@ export default function TrusteeDashboard() {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
 
-  // Per-election share submission state (keyed by electionId)
-  const [shareFiles, setShareFiles] = useState({});       // unused placeholder
-  const [sharePassphrases, setSharePassphrases] = useState({}); // unused placeholder
+  const [shareFiles, setShareFiles] = useState({});
+  const [sharePassphrases, setSharePassphrases] = useState({});
+  const [submitting, setSubmitting] = useState({});
 
   useEffect(() => { initialize(); }, []);
 
   useEffect(() => {
     if (message) {
-      const t = setTimeout(() => { setMessage(''); setMessageType(''); }, 3000);
+      const t = setTimeout(() => { setMessage(''); setMessageType(''); }, 4000);
       return () => clearTimeout(t);
     }
   }, [message]);
@@ -41,16 +41,14 @@ export default function TrusteeDashboard() {
 
       const { deployedContract } = await getDeployedContract();
 
-      // Verify this wallet is a registered trustee
       const trusteeInfo = await deployedContract.methods.getTrusteeInfo(address).call();
-      if (trusteeInfo.walletAddress.toLowerCase() !== address.toLowerCase()) {
+      if (trusteeInfo.walletAddress.toLowerCase() !== address.toLowerCase()) {  
         setMessage('This wallet is not a registered trustee.');
         setMessageType('danger');
         setTimeout(() => navigate('/'), 2000);
         return;
       }
 
-      // Find 1-based index of this trustee
       const trusteeAddrs = await deployedContract.methods.getTrusteeAddresses().call();
       const idx = trusteeAddrs.findIndex(a => a.toLowerCase() === address.toLowerCase());
       setTrusteeIndex(idx + 1);
@@ -72,19 +70,21 @@ export default function TrusteeDashboard() {
 
       for (const id of ids) {
         const info = await contract.methods.getElectionInfo(id).call();
-        const tally = await contract.methods.getEncryptedTally(id).call();
+        const tally = await contract.methods.getEncryptedTally(id).call();      
         const results = await contract.methods.getResults(id).call();
+        const pdStr = await contract.methods.getPartialDecryption(id, address).call();
 
         rows.push({
           id: Number(id),
           title: info.title,
           endTime: Number(info.endTime),
           tallyStored: tally.tallyStored,
+          encryptedTally: tally.encryptedTally,
           resultsPublished: results.resultsPublished,
+          pdSubmitted: pdStr !== "",
         });
       }
 
-      // Show most-recently-ended first
       rows.sort((a, b) => b.endTime - a.endTime);
       setElections(rows);
     } catch (err) {
@@ -99,6 +99,77 @@ export default function TrusteeDashboard() {
     navigate('/');
   };
 
+  const handleFileChange = (e, electionId) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const json = JSON.parse(event.target.result);
+          
+          if (json.share_index !== trusteeIndex) {
+            setMessage(`âŒ Invalid share file! This account is Trustee #${trusteeIndex}, but you uploaded the file for Trustee #${json.share_index}.`);
+            setMessageType('danger');
+            setShareFiles(prev => { const newFiles = {...prev}; delete newFiles[electionId]; return newFiles; });
+            return;
+          }
+
+          setShareFiles(prev => ({ ...prev, [electionId]: json }));
+          setMessage(`âœ… Loaded trustee_${json.share_index}.json correctly.`);
+          setMessageType('success');
+        } catch (err) {
+          setMessage('Invalid JSON file format.');
+          setMessageType('danger');
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handlePassphraseChange = (e, electionId) => {
+    setSharePassphrases(prev => ({ ...prev, [electionId]: e.target.value }));
+  };
+
+  const handleSubmitPartialDecryption = async (election) => {
+    const shareData = shareFiles[election.id];
+    const passphrase = sharePassphrases[election.id];
+    
+    if (!shareData || !passphrase) {
+        setMessage('Please upload your share file and enter your passphrase.');
+        setMessageType('danger');
+        return;
+    }
+
+    setSubmitting(prev => ({ ...prev, [election.id]: true }));
+
+    try {
+        const s_i = await decryptShareY(shareData.encrypted_y, passphrase);
+        const { deployedContract } = await getDeployedContract();
+        const pubKeyN = await deployedContract.methods.getPaillierPublicKey().call();
+
+        let tallyPayload;
+        try { tallyPayload = JSON.parse(election.encryptedTally); } catch { tallyPayload = { encrypted_total: election.encryptedTally }; }
+        const pd_i = computeTrusteePartialDecryption(tallyPayload.encrypted_total, s_i, pubKeyN);
+
+        await deployedContract.methods.submitPartialDecryption(election.id, pd_i).send({
+            from: walletAddress,
+            gas: 3000000
+        });
+
+        setMessage('Partial decryption submitted successfully! The organizer will now be able to tally the results.');
+        setMessageType('success');
+        
+        await loadElections(deployedContract, walletAddress);
+
+    } catch (err) {
+        console.error(err);
+        setMessage('Failed to compute or submit partial decryption: ' + err.message);
+        setMessageType('danger');
+    } finally {
+        setSubmitting(prev => ({ ...prev, [election.id]: false }));
+    }
+  };
+
   const formatDate = (ts) =>
     new Date(ts * 1000).toLocaleString('en-US', {
       year: 'numeric', month: 'short', day: 'numeric',
@@ -106,8 +177,9 @@ export default function TrusteeDashboard() {
     });
 
   const getStatusBadge = (e) => {
-    if (e.resultsPublished)            return { label: 'Results Published',   bg: '#6c757d' };
-    if (e.tallyStored)                 return { label: 'Awaiting Decryption', bg: '#f59e0b' };
+    if (e.resultsPublished) return { label: 'Results Published', bg: '#6c757d' };
+    if (e.tallyStored && e.pdSubmitted) return { label: 'PD Submitted', bg: '#10b981' };
+    if (e.tallyStored) return { label: 'Action Required', bg: '#ef4444' };
     if (Date.now() / 1000 > e.endTime) return { label: 'Awaiting Aggregation', bg: '#fd7e14' };
     return { label: 'Voting In Progress', bg: '#17a2b8' };
   };
@@ -131,34 +203,17 @@ export default function TrusteeDashboard() {
       <MessageAlert message={message} type={messageType} />
 
       <div style={{ marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1200px' }}>
-        {/* Header */}
         <div style={{ marginBottom: '32px' }}>
           <h1 style={{ color: '#1e293b', fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>
-            🔐 Trustee Dashboard
+            🔑 Trustee Dashboard
           </h1>
           <p style={{ color: '#64748b', fontSize: '16px' }}>
-            Trustee #{trusteeIndex} — when voting ends, securely transfer your share file to the election organizer so they can decrypt and publish results.
+            Trustee #{trusteeIndex} — Compute and submit your Partial Decryptions securely.
           </p>
         </div>
 
-        {/* Info card */}
-        <div style={{
-          backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px',
-          padding: '16px 20px', marginBottom: '28px', display: 'flex', alignItems: 'center', gap: '12px'
-        }}>
-          <span style={{ fontSize: '24px' }}>ℹ️</span>
-          <p style={{ color: '#1e40af', margin: 0, fontSize: '14px' }}>
-            Your trustee key share is stored in <code>trustee_shares/trustee_{trusteeIndex}.json</code>.
-            Hand this file to the election organizer when they need to decrypt results. Keep it secret!
-          </p>
-        </div>
-
-        {/* Election list */}
         {elections.length === 0 ? (
-          <div style={{
-            backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px',
-            padding: '48px', textAlign: 'center'
-          }}>
+          <div style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '48px', textAlign: 'center' }}>
             <p style={{ color: '#94a3b8', fontSize: '18px' }}>No elections found.</p>
           </div>
         ) : (
@@ -166,52 +221,49 @@ export default function TrusteeDashboard() {
             {elections.map(e => {
               const badge = getStatusBadge(e);
               return (
-                <div key={e.id} style={{
-                  backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px',
-                  padding: '24px', display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'center', gap: '16px', flexWrap: 'wrap'
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                      <h3 style={{ margin: 0, color: '#1e293b', fontSize: '18px', fontWeight: '600' }}>
-                        {e.title}
-                      </h3>
-                      <span style={{
-                        backgroundColor: badge.bg, color: '#fff', fontSize: '12px',
-                        fontWeight: '600', padding: '3px 10px', borderRadius: '20px'
-                      }}>
-                        {badge.label}
-                      </span>
-                    </div>
-<p style={{ color: '#64748b', margin: 0, fontSize: '14px' }}>
-                    Election #{e.id} · Ended: {formatDate(e.endTime)}
-                  </p>
-                </div>
-
-                {/* Decryption required notice */}
-                {e.tallyStored && !e.resultsPublished && (
-                  <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0', width: '100%' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', marginBottom: '8px' }}>
-                      🔑 Decryption Required
-                    </div>
-                    <div style={{ padding: '10px 14px', backgroundColor: '#fef3c7', borderRadius: '8px', color: '#92400e', fontSize: '13px' }}>
-                      Provide your share file (<code>trustee_shares/trustee_{trusteeIndex}.json</code>) and
-                      passphrase to the election organizer so they can perform threshold decryption and publish results.
+                <div key={e.id} style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                        <h3 style={{ margin: 0, color: '#1e293b', fontSize: '18px', fontWeight: '600' }}>{e.title}</h3>
+                        <span style={{ backgroundColor: badge.bg, color: '#fff', fontSize: '12px', fontWeight: '600', padding: '3px 10px', borderRadius: '20px' }}>{badge.label}</span>
+                      </div>
+                      <p style={{ color: '#64748b', margin: 0, fontSize: '14px' }}>Election #{e.id} · Ended: {formatDate(e.endTime)}</p>
                     </div>
                   </div>
-                )}
 
-                  <button
-                    onClick={() => navigate('/organizer-manage-election', { state: { electionId: e.id } })}
-                    style={{
-                      padding: '10px 20px', borderRadius: '8px', border: 'none',
-                      cursor: 'pointer', fontWeight: '600', fontSize: '14px',
-                      backgroundColor: '#e2e8f0', color: '#64748b',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    View Election
-                  </button>
+                  {e.tallyStored && !e.resultsPublished && !e.pdSubmitted && (
+                    <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                      <p style={{ color: '#1e293b', fontWeight: 'bold', marginBottom: '12px' }}>Action Required: Compute Partial Decryption</p>
+                      <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '16px' }}>
+                        Please upload your share file (<code>trustee_{trusteeIndex}.json</code>) and enter your passphrase to locally decrypt your share and compute your Partial Decryption.
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div>
+                          <input type="file" accept=".json" onChange={(event) => handleFileChange(event, e.id)} style={{ display: 'block', fontSize: '14px' }} />
+                        </div>
+                        <div>
+                          <input type="password" placeholder="Share Passphrase" onChange={(event) => handlePassphraseChange(event, e.id)} value={sharePassphrases[e.id] || ''} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', width: '220px' }} />
+                        </div>
+                        <button
+                          onClick={() => handleSubmitPartialDecryption(e)}
+                          disabled={submitting[e.id]}
+                          style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', backgroundColor: '#3b82f6', color: '#fff', fontWeight: '600', fontSize: '14px', cursor: submitting[e.id] ? 'not-allowed' : 'pointer', opacity: submitting[e.id] ? 0.7 : 1 }}
+                        >
+                          {submitting[e.id] ? 'Submitting...' : 'Submit Partial Decryption'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {e.pdSubmitted && !e.resultsPublished && (
+                     <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                     <div style={{ padding: '10px 14px', backgroundColor: '#dcfce7', borderRadius: '8px', color: '#166534', fontSize: '13px', fontWeight: 'bold' }}>
+                       ✓ You have successfully submitted your Partial Decryption for this election. Awaiting Organizer completion.
+                     </div>
+                   </div>
+                  )}
+
                 </div>
               );
             })}

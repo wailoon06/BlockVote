@@ -40,10 +40,9 @@ class ShamirSecretSharing:
         Initialize Shamir's Secret Sharing
 
         Args:
-            prime: Large prime for finite field arithmetic.
-                   Defaults to the RFC 3526 MODP Group 14 2048-bit prime,
-                   which guarantees information-theoretic security for secrets
-                   up to ~2048 bits (e.g. a 1024-bit or 2048-bit Paillier lambda).
+            prime: The operating modulus. For Threshold Paillier, this is typically
+                   set to n * lambda to ensure the polynomial maps directly to the
+                   exponent space Z_{n^2}^* without wrapping incorrectly.
         """
         self.prime = prime if prime is not None else DEFAULT_PRIME
     
@@ -52,9 +51,6 @@ class ShamirSecretSharing:
         Generate random polynomial with secret as constant term
 
         f(x) = secret + a1*x + a2*x^2 + ... + a_degree*x^degree
-
-        All coefficients are drawn uniformly from [1, prime) so that the
-        polynomial lives entirely in the finite field.
         """
         coefficients = [secret % self.prime] + [
             secrets.randbelow(self.prime) for _ in range(degree)

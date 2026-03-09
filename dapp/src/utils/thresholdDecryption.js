@@ -164,6 +164,112 @@ export function paillierDecrypt(ciphertext, lambda, publicKeyN) {
 }
 
 // ---------------------------------------------------------------------------
+// Ping-Pong Threshold Decryption Math
+// ---------------------------------------------------------------------------
+
+/**
+ * Trustee computation: Partial Decryption
+ * PD_i = C^{s_i} mod n^2
+ * @param {string} encryptedTally (C)
+ * @param {string|BigInt} shareY (s_i)
+ * @param {string} publicKeyN (n)
+ * @returns {string} PD_i as string
+ */
+export function computeTrusteePartialDecryption(encryptedTally, shareY, publicKeyN) {
+  const c = BigInt(encryptedTally);
+  const s = BigInt(shareY);
+  const n = BigInt(publicKeyN);
+  const n2 = n * n;
+  
+  // To evaluate PD_i = C^{s_i} mod n^2
+  // We handle negative s properly just in case, though they should be positive.
+  let p = s;
+  let base = c;
+  if (p < 0n) {
+    p = -p;
+    base = modInverse(base, n2);
+  }
+  
+  const pd = modPow(base, p, n2);
+  return pd.toString();
+}
+
+/**
+ * Organizer computation: Combine Partial Decryptions
+ * Uses Lagrange interpolation over integers.
+ * @param {Array<{x: number, pd: string}>} partialDecryptions 
+ * @param {string} publicKeyN (n)
+ * @returns {string} Fully decrypted plaintext M
+ */
+export function combinePartialDecryptions(partialDecryptions, publicKeyN) {
+  if (partialDecryptions.length < 2) throw new Error('Need at least 2 partial decryptions');
+
+  const n = BigInt(publicKeyN);
+  const n2 = n * n;
+  
+  // Convert inputs
+  const pds = partialDecryptions.map(p => ({ x: BigInt(p.x), pd: BigInt(p.pd) }));
+
+  // 1. Calculate Lagrange weights L_i(0) as fractions: N_i / D_i
+  const weights = [];
+  for (let i = 0; i < pds.length; i++) {
+    let num = 1n;
+    let den = 1n;
+    for (let j = 0; j < pds.length; j++) {
+      if (i === j) continue;
+      num *= (0n - pds[j].x);
+      den *= (pds[i].x - pds[j].x);
+    }
+    weights.push({ num, den });
+  }
+
+  // 2. Compute common Delta (product of absolute values of all D_i)
+  // This guarantees integer exponents for everyone.
+  let delta = 1n;
+  for (const w of weights) {
+    const absD = w.den < 0n ? -w.den : w.den;
+    delta *= absD;
+  }
+
+  // 3. Compute V = \prod PD_i ^ { \lambda_i } mod n^2
+  let V = 1n;
+  for (let i = 0; i < pds.length; i++) {
+    const { num, den } = weights[i];
+    // lambda_i = (Delta / D_i) * N_i
+    const lambda_i = (delta / den) * num;
+    
+    let base = pds[i].pd;
+    let exp = lambda_i;
+    
+    if (exp < 0n) {
+      exp = -exp;
+      base = modInverse(base, n2);
+    }
+    
+    const term = modPow(base, exp, n2);
+    V = (V * term) % n2;
+  }
+
+  // 4. Extract plaintext
+  // Apply L-function: L(V) = (V - 1) / n
+  // L(V) equals (m * Delta) mod n
+  
+  // Since V = 1 + n * m * \Delta_S mod n^2, handling negative (V-1)/n in case JS gives negative mod
+  let V_minus_1 = V - 1n;
+  if (V_minus_1 < 0n) V_minus_1 += n2;
+  
+  let L_val = V_minus_1 / n;
+  L_val = L_val % n; 
+  if (L_val < 0n) L_val += n;
+
+  // 5. Final multiplication by Delta^-1 mod n
+  const deltaInv = modInverse(delta, n);
+  const m = (L_val * deltaInv) % n;
+
+  return m.toString();
+}
+
+// ---------------------------------------------------------------------------
 // High-level: full Phase 4 decryption
 // ---------------------------------------------------------------------------
 
@@ -211,6 +317,11 @@ export function thresholdDecrypt(encryptedTally, shares, publicKeyN) {
 export function extractVoteCounts(msum, numCandidates, voteBlock) {
   let tmp = BigInt(msum);
   const B = BigInt(voteBlock);
+  
+  if (tmp.toString().length > (numCandidates * B.toString().length + 5)) {
+    throw new Error('CRITICAL DECRYPTION FAILURE: The decrypted result is mathematically garbage (' + tmp.toString().length + ' digits). This occurs because one or more Trustees uploaded the wrong share file (e.g. uploading trustee_1 on Trustee 2 account), corrupting the Secret Sharing interpolation.');
+  }
+
   const perCandidateVotes = {};
   for (let i = 0; i < numCandidates; i++) {
     perCandidateVotes[String(i)] = Number(tmp % B);
@@ -300,5 +411,5 @@ export async function decryptShareY(encryptedY, passphrase) {
   }
 }
 
-export default { reconstructSecret, paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY, modPow };
+export default { reconstructSecret, paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY, modPow, computeTrusteePartialDecryption, combinePartialDecryptions };
 

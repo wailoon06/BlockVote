@@ -111,7 +111,7 @@ async function uploadPublicKeyToBlockchain(contract, publicKeyN, adminAccount) {
     }
 }
 
-async function splitPrivateKey(lambda, threshold, numShares) {
+async function splitPrivateKey(lambda, mu, n, threshold, numShares) {
     console.log(`\n🔐 Step 4: Splitting Private Key using Shamir's Secret Sharing...`);
     console.log(`   Threshold: ${threshold}`);
     console.log(`   Total Shares: ${numShares}`);
@@ -122,11 +122,18 @@ import json
 sys.path.append('${path.join(__dirname, '..', 'backend').replace(/\\/g, '\\\\')}')
 from shamir_sharing import ShamirSecretSharing
 
-# Initialize Shamir
-shamir = ShamirSecretSharing()
+# The modulus for Threshold Paillier polynomial must be n * lambda
+# to perfectly preserve the homomorphic exponentiation over Z_{n^2}^*
+modulus = int(${n}) * int(${lambda})
 
-# Split the secret (lambda value)
-secret = ${lambda}
+# Initialize Shamir
+shamir = ShamirSecretSharing(prime=modulus)
+
+# We split S = lambda * mu, so that combining PDs directly yields m
+S = (int(${lambda}) * int(${mu})) % modulus
+
+# Split the secret (S value)
+secret = S
 threshold = ${threshold}
 num_shares = ${numShares}
 
@@ -336,6 +343,8 @@ async function main() {
         // Step 4: Split Private Key
         const { shares, prime } = await splitPrivateKey(
             keyData.private_key_lambda,
+            keyData.private_key_mu,
+            keyData.public_key_n,
             parseInt(threshold),
             parseInt(numTrustees)
         );

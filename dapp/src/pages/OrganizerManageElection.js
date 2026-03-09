@@ -6,7 +6,7 @@ import Navbar from '../components/Navbar';
 import IPFSClient from '../utils/ipfsClient';
 import { performHomomorphicAddition } from '../utils/homomorphicAggregator';
 import { computeVoteBlock } from '../utils/voteEncryption';
-import { decryptShareY, reconstructSecret, thresholdDecrypt, extractVoteCounts } from '../utils/thresholdDecryption';
+import { extractVoteCounts, combinePartialDecryptions } from '../utils/thresholdDecryption';
 
 export default function OrganizerManageElection() {
   const navigate = useNavigate();
@@ -377,37 +377,29 @@ export default function OrganizerManageElection() {
   };
 
   const handleDecryptAndPublish = async () => {
-    const validInputs = shareInputs.filter(s => s.file !== null);
-    if (validInputs.length < 2) {
-      setMessage('Upload at least 2 trustee share files to perform threshold decryption.');
-      setMessageType('danger');
-      return;
-    }
-
     setDecrypting(true);
-    setMessage('Decrypting shares...');
+    setMessage('Fetching Partial Decryptions from blockchain...');
     setMessageType('info');
 
     try {
       const { deployedContract } = await getDeployedContract();
-
-      // 1. Parse and decrypt each share
-      const shares = [];
-      for (const input of validInputs) {
-        const text = await input.file.text();
-        const shareData = JSON.parse(text);
-        let y;
-        if (shareData.encrypted_y) {
-          if (!input.passphrase.trim()) throw new Error(`Passphrase required for share x=${shareData.x}.`);
-          y = await decryptShareY(shareData.encrypted_y, input.passphrase);
-        } else {
-          y = String(shareData.y);
-        }
-        shares.push({ x: shareData.x, y, prime: shareData.prime });
+      
+      const submitters = await deployedContract.methods.getPartialDecryptionSubmitters(electionId).call();
+      
+      if (submitters.length < 2) {
+        throw new Error(`Only ${submitters.length} Partial Decryptions submitted. At least 2 required.`);
       }
 
-      // 2. Reconstruct lambda and decrypt tally
-      setMessage('Reconstructing private key and decrypting tally...');
+      const pds = [];
+      const trusteeAddrs = await deployedContract.methods.getTrusteeAddresses().call();
+
+      for (let addr of submitters) {
+         let pdStr = await deployedContract.methods.getPartialDecryption(electionId, addr).call();
+         const idx = trusteeAddrs.findIndex(a => a.toLowerCase() === addr.toLowerCase()) + 1;
+         pds.push({ x: idx, pd: pdStr });
+      }
+
+      setMessage('Combining Partial Decryptions...');
       const tally = await deployedContract.methods.getEncryptedTally(electionId).call();
       if (!tally.tallyStored) throw new Error('Tally not stored yet.');
 
@@ -415,7 +407,7 @@ export default function OrganizerManageElection() {
       try { tallyObj = JSON.parse(tally.encryptedTally); } catch { tallyObj = { encrypted_total: tally.encryptedTally }; }
 
       const publicKeyN = await deployedContract.methods.getPaillierPublicKey().call();
-      const { plaintext } = thresholdDecrypt(tallyObj.encrypted_total, shares, publicKeyN);
+      const plaintext = combinePartialDecryptions(pds, publicKeyN);
 
       // 3. Extract per-candidate vote counts
       const approvedCandidates = await deployedContract.methods.getApprovedCandidates(electionId).call();
@@ -432,7 +424,7 @@ export default function OrganizerManageElection() {
         total_votes: Number(tally.totalVotes),
         per_candidate_votes: perCandidateVotes,
         candidates: approvedCandidates,
-        method: 'Threshold Paillier — Trustee SSS',
+        method: 'Threshold Paillier — Ping-Pong',
         published_at: new Date().toISOString(),
       });
 
@@ -442,7 +434,6 @@ export default function OrganizerManageElection() {
 
       setMessage('✅ Results published successfully!');
       setMessageType('success');
-      setShareInputs([{ file: null, passphrase: '' }]);
       await loadPhase4Status(deployedContract);
     } catch (err) {
       setMessage('Decryption failed: ' + err.message.replace(/\d{50,}/g, '[redacted]'));
@@ -987,51 +978,19 @@ export default function OrganizerManageElection() {
                     {tallyStatus?.tallyStored && (
                       <div style={{ marginTop: '8px', padding: '20px', backgroundColor: '#fefce8', borderRadius: '10px', border: '1px solid #fcd34d' }}>
                         <div style={{ fontSize: '14px', fontWeight: '600', color: '#1e293b', marginBottom: '12px' }}>
-                          🔓 Step 3 — Threshold Decryption &amp; Publish
+                          🔓 Step 3 — Combine Partial Decryptions & Publish
                         </div>
                         <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px', margin: '0 0 16px 0' }}>
-                          Upload at least 2 trustee share files (JSON). If a share is passphrase-protected, enter the passphrase provided by the trustee.
+                          Wait for Trustees to compute and submit their Partial Decryptions. You don't need their shares directly! Just combine them once at least 2 are submitted.
                         </p>
-                        {shareInputs.map((input, idx) => (
-                          <div key={idx} style={{ display: 'flex', gap: '10px', marginBottom: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <input
-                              type="file"
-                              accept=".json"
-                              onChange={e => {
-                                const file = e.target.files[0] || null;
-                                setShareInputs(prev => prev.map((s, i) => i === idx ? { ...s, file } : s));
-                              }}
-                              style={{ fontSize: '13px', flex: '1 1 200px' }}
-                            />
-                            <input
-                              type="password"
-                              placeholder="Passphrase (if encrypted)"
-                              value={input.passphrase}
-                              onChange={e => {
-                                const passphrase = e.target.value;
-                                setShareInputs(prev => prev.map((s, i) => i === idx ? { ...s, passphrase } : s));
-                              }}
-                              style={{ fontSize: '13px', flex: '1 1 180px', padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: '6px' }}
-                            />
-                            {shareInputs.length > 1 && (
-                              <button
-                                onClick={() => setShareInputs(prev => prev.filter((_, i) => i !== idx))}
-                                style={{ padding: '6px 10px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
-                              >✕</button>
-                            )}
-                          </div>
-                        ))}
+                        
                         <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-                          <button
-                            onClick={() => setShareInputs(prev => [...prev, { file: null, passphrase: '' }])}
-                            style={{ padding: '8px 14px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' }}
-                          >+ Add Share File</button>
                           <button
                             onClick={handleDecryptAndPublish}
                             disabled={decrypting}
                             style={{ padding: '8px 16px', backgroundColor: decrypting ? '#94a3b8' : '#6366f1', color: 'white', border: 'none', borderRadius: '6px', cursor: decrypting ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
                           >
-                            {decrypting ? '⚙️ Decrypting...' : '🔓 Decrypt & Publish Results'}
+                            {decrypting ? '⚙️ Decrypting...' : '🔓 Fetch PDs, Decrypt & Publish'}
                           </button>
                         </div>
                       </div>
