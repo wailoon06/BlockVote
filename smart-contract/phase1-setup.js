@@ -119,12 +119,20 @@ async function splitPrivateKey(lambda, mu, n, threshold, numShares) {
     const splitScript = `
 import sys
 import json
+import hashlib
 sys.path.append('${path.join(__dirname, '..', 'backend').replace(/\\/g, '\\\\')}')
 from shamir_sharing import ShamirSecretSharing
 
 # The modulus for Threshold Paillier polynomial must be n * lambda
 # to perfectly preserve the homomorphic exponentiation over Z_{n^2}^*
-modulus = int(${n}) * int(${lambda})
+n_val = int(${n})
+modulus = n_val * int(${lambda})
+n_sq = n_val * n_val
+
+# pseudo-random generator v for Z_{n^2}^*
+h = hashlib.sha256(str(n_val).encode()).hexdigest()
+v_base = int(h, 16)
+v = pow(v_base, 2 * n_val, n_sq)
 
 # Initialize Shamir
 shamir = ShamirSecretSharing(prime=modulus)
@@ -141,10 +149,11 @@ shares = shamir.split_secret(secret, threshold, num_shares)
 
 # Convert to JSON (include the prime so trustees can do modular reconstruction)
 result = {
-    'shares': [{'x': x, 'y': str(y)} for x, y in shares],
+    'shares': [{'x': x, 'y': str(y), 'v_i': str(pow(v, y, n_sq))} for x, y in shares],
     'threshold': threshold,
     'num_shares': num_shares,
-    'prime': str(shamir.prime)
+    'prime': str(shamir.prime),
+    'v': str(v)
 }
 
 print(json.dumps(result))
@@ -164,7 +173,7 @@ print(json.dumps(result))
         }
         console.log(`   Prime field: RFC 3526 Group 14 (2048-bit)`);
 
-        return { shares: result.shares, prime: result.prime };
+        return { shares: result.shares, prime: result.prime, v: result.v };
     } catch (error) {
         if (fs.existsSync(tempSplitScript)) {
             fs.unlinkSync(tempSplitScript);
@@ -173,7 +182,7 @@ print(json.dumps(result))
     }
 }
 
-async function distributeShares(shares, prime, trusteeAddresses, contract) {
+async function distributeShares(shares, prime, v_generator, trusteeAddresses, contract) {
     console.log('\n📤 Step 5: Distributing Shares to Trustees...');
     console.log('🔐 Each trustee share will be encrypted with AES-256-GCM using a passphrase.');
     console.log('   Keep each passphrase safe — it is required to decrypt the share during vote counting.\n');
@@ -221,17 +230,41 @@ async function distributeShares(shares, prime, trusteeAddresses, contract) {
             share_index:     i + 1,
             x:               share.x,
             encrypted_y,
+            v_i:             share.v_i,  // Public Verification Share
             prime,                     // RFC 3526 Group 14 prime for modular reconstruction
-            distributed_at:  new Date().toISOString(),
-            warning: '⚠️ KEEP THIS FILE SECURE! This share is required for vote decryption. The y value is AES-256-GCM encrypted — your passphrase is needed to decrypt it.'
-        };
+              v: v_generator,            // Public Verification Generator
+              distributed_at:  new Date().toISOString(),
+              warning: '⚠️ KEEP THIS FILE SECURE! This share is required for vote decryption. The y value is AES-256-GCM encrypted — your passphrase is needed to decrypt it.'
+          };
 
-        const shareFilePath = path.join(sharesDir, `trustee_${i + 1}.json`);
-        fs.writeFileSync(shareFilePath, JSON.stringify(shareData, null, 2));
+          const shareFilePath = path.join(sharesDir, `trustee_${i + 1}.json`);
+          fs.writeFileSync(shareFilePath, JSON.stringify(shareData, null, 2));
 
         console.log(`   ✅ Share encrypted and saved to: ${shareFilePath}`);
         console.log(`   Commitment: ${commitment}`);
     }
+
+    // Save global verification shares to React app for combiner reference
+    const verificationData = {
+        v: v_generator,
+        prime,
+        shares: shares.map((s, idx) => ({
+            trustee: trusteeAddresses[idx],
+            share_index: s.x,
+            v_i: s.v_i
+        }))
+    };
+    
+    // Create config folder if it doesn't exist
+    const reactConfigDir = path.join(__dirname, '..', 'dapp', 'src', 'config');
+    if (!fs.existsSync(reactConfigDir)) {
+        fs.mkdirSync(reactConfigDir, { recursive: true });
+    }
+    fs.writeFileSync(
+        path.join(reactConfigDir, 'verification_shares.json'),
+        JSON.stringify(verificationData, null, 2)
+    );
+    console.log(`   ✅ Public verification shares saved to React app configs.`);
 
     rl.close();
 
@@ -341,7 +374,7 @@ async function main() {
         await uploadPublicKeyToBlockchain(contract, keyData.public_key_n, adminAccount);
         
         // Step 4: Split Private Key
-        const { shares, prime } = await splitPrivateKey(
+        const { shares, prime, v } = await splitPrivateKey(
             keyData.private_key_lambda,
             keyData.private_key_mu,
             keyData.public_key_n,
@@ -350,7 +383,7 @@ async function main() {
         );
 
         // Step 5: Distribute Shares
-        const commitments = await distributeShares(shares, prime, trusteeAddresses, contract);
+        const commitments = await distributeShares(shares, prime, v, trusteeAddresses, contract);
         
         // Step 5b: Submit commitments to blockchain (admin submits on behalf of trustees)
         await submitShareCommitments(contract, trusteeAddresses, commitments, adminAccount);

@@ -7,7 +7,7 @@ include "circomlib/circuits/bitify.circom";
 // ─────────────────────────────────────────────────────────────────────────────
 // regCheck — identity + age + vote-validity circuit
 //
-// Public signals (nPublic = 9):
+// Public signals (nPublic = 10):
 //   [0] ageThreshold      — must equal 18
 //   [1] nullifierHash     — Poseidon(voterSecret, electionId)   anti-double-vote
 //   [2] electionId        — target election
@@ -18,6 +18,7 @@ include "circomlib/circuits/bitify.circom";
 //   [7] numCandidates     — approved candidate count for the election
 //   [8] choiceCommitment  — Poseidon(candidateIndex, voterSecret, electionId)
 //                           binds the encrypted ballot to a specific valid candidate
+//   [9] payloadHash       — binds the execution to a specific caller to prevent front-running
 // ─────────────────────────────────────────────────────────────────────────────
 
 template regCheck() {
@@ -38,6 +39,7 @@ template regCheck() {
     signal input currentDay;       // UTC day
     signal input numCandidates;    // total approved candidates (NEW)
     signal input choiceCommitment; // Poseidon(candidateIndex, voterSecret, electionId) (NEW)
+    signal input payloadHash;      // Mitigates mempool front-running (NEW)
 
     // ── 1) Constrain IC digits to 0..9 ─────────────────────────────────────
     component digitBits[12];
@@ -125,6 +127,9 @@ template regCheck() {
     choiceHasher.inputs[1] <== voterSecret;
     choiceHasher.inputs[2] <== electionId;
     choiceCommitment === choiceHasher.out;
+
+    // ── 10) Dummy constraint for payload hash to prevent front-running ───────
+    signal payloadSquare <== payloadHash * payloadHash;
 }
 
 component main {
@@ -137,6 +142,7 @@ component main {
         currentMonth,
         currentDay,
         numCandidates,
-        choiceCommitment
+        choiceCommitment,
+        payloadHash
     ]
 } = regCheck();

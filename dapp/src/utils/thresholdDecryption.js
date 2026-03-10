@@ -411,5 +411,111 @@ export async function decryptShareY(encryptedY, passphrase) {
   }
 }
 
-export default { reconstructSecret, paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY, modPow, computeTrusteePartialDecryption, combinePartialDecryptions };
+/**
+ * Generate a random BigInt of specified bit length
+ */
+function randomBigInt(bits) {
+  const bytes = Math.ceil(bits / 8);
+  const buf = new Uint8Array(bytes);
+  crypto.getRandomValues(buf);
+  let res = 0n;
+  for (let i = 0; i < bytes; i++) res = (res << 8n) | BigInt(buf[i]);
+  const extra = (bytes * 8) - bits;
+  if (extra > 0) res = res >> BigInt(extra);
+  return res;
+}
+
+/**
+ * Generate a Non-Interactive Chaum-Pedersen Zero-Knowledge Proof.
+ * Proves that pd_i = c^{s_i} mod n^2 and V_i = v^{s_i} mod n^2 share the same s_i.
+ * Uses integer arithmetic for z to prevent statistical leakage since the group order is unknown.
+ */
+export async function generateDecryptionProof(cHex, s_iHex, vHex, V_iHex, nHex) {
+  const c = BigInt(cHex);
+  const s_i = BigInt(s_iHex);
+  const v = BigInt(vHex);
+  const V_i = BigInt(V_iHex);
+  const n = BigInt(nHex);
+  const n2 = n * n;
+
+  // w needs to be strictly larger than e * s_i to prevent leakage.
+  // s_i is up to ~2048 bits. e is 256 bits. Adding 80 bits for statistical security = 2384. 
+  // 3000 bits is safe.
+  const w = randomBigInt(3000);
+
+  const A1 = modPow(v, w, n2);
+  const A2 = modPow(c, w, n2);
+
+  let p = s_i;
+  let basec = c;
+  if (p < 0n) {
+      p = -p;
+      basec = modInverse(basec, n2);
+  }
+  const pd_i = modPow(basec, p, n2);
+
+  const msg = v.toString() + V_i.toString() + c.toString() + pd_i.toString() + A1.toString() + A2.toString();
+  const encoder = new TextEncoder();
+  const data = encoder.encode(msg);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const e = BigInt('0x' + hashHex);
+
+  const z = w + (e * s_i);
+
+  return {
+    e: e.toString(),
+    z: z.toString(),
+    pd_i: pd_i.toString()
+  };
+}
+
+/**
+ * Verify heavily rigorous Chaum-Pedersen proofs published by the Trustees.
+ * Protects Combiners/Organizers from a Denial-of-Service or silent data corruption attack.
+ */
+export async function verifyDecryptionProof(cHex, vHex, V_iHex, pd_iHex, eStr, zStr, nHex) {
+  try {
+    const c = BigInt(cHex);
+    const v = BigInt(vHex);
+    const V_i = BigInt(V_iHex);
+    const pd = BigInt(pd_iHex);
+    const e = BigInt(eStr);
+    const z = BigInt(zStr);
+    const n = BigInt(nHex);
+    const n2 = n * n;
+
+    // A1 = (v^z) * (V_i^{-e}) mod n^2
+    const v_z = modPow(v, ((z % n2) + n2) % n2, n2); // For bases, exponent can just be calculated directly? No, z is over the integers, we cannot reduce z mod n2 because order of v is unknown!
+    // Wait, modPow applies repeated squaring on the EXPLICIT integer z. That is completely valid.
+    const v_z_raw = modPow(v, z, n2);
+    
+    // Using modInverse(V_i, n2)^e or modPow(V_i, e, n2) inverted
+    let Vi_e = modPow(V_i, e, n2);
+    let Vi_e_inv = modInverse(Vi_e, n2);
+    let A1 = (v_z_raw * Vi_e_inv) % n2;
+
+    // A2 = (c^z) * (pd_i^{-e}) mod n^2
+    let c_z_raw = modPow(c, z, n2);
+    let pd_e = modPow(pd, e, n2);
+    let pd_e_inv = modInverse(pd_e, n2);
+    let A2 = (c_z_raw * pd_e_inv) % n2;
+
+    const msg = v.toString() + V_i.toString() + c.toString() + pd.toString() + A1.toString() + A2.toString();
+    const encoder = new TextEncoder();
+    const data = encoder.encode(msg);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const eCalc = BigInt('0x' + hashHex);
+
+    return eCalc === e;
+  } catch (error) {
+    console.error("ZKP verification internally failed:", error);
+    return false;
+  }
+}
+
+export default { reconstructSecret, paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY, modPow, computeTrusteePartialDecryption, combinePartialDecryptions, generateDecryptionProof, verifyDecryptionProof };
 

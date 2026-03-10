@@ -12,12 +12,13 @@ pragma solidity ^0.8.0;
 //   [6] currentDay
 //   [7] numCandidates      approved candidate count
 //   [8] choiceCommitment   Poseidon(candidateIndex, voterSecret, electionId)
+//   [9] payloadHash        Hash of the IPFS CID (Mempool binding)
 interface IVoteVerifier {
     function verifyProof(
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[9] calldata _pubSignals
+        uint[10] calldata _pubSignals
     ) external view returns (bool);
 }
 
@@ -485,7 +486,7 @@ contract Contract {
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[9] calldata _pubSignals
+        uint[10] calldata _pubSignals
     ) internal view {
         if (address(voteVerifier) == address(0)) revert NoVerifier();
         if (_pubSignals[0] != 18) revert InvalidAge();
@@ -504,7 +505,7 @@ contract Contract {
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[9] calldata _pubSignals
+        uint[10] calldata _pubSignals
     ) external {
         if (!voters[msg.sender].isRegistered) revert NotRegistered();
         if (voters[msg.sender].status != 0) revert NotPending();
@@ -641,7 +642,7 @@ contract Contract {
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[9] calldata _pubSignals
+        uint[10] calldata _pubSignals
     ) external {
         if (!candidates[msg.sender].isRegistered) revert NotRegistered();
         if (candidates[msg.sender].status != 0) revert NotPending();
@@ -966,13 +967,14 @@ contract Contract {
      *   _pubSignals[6] = currentDay
      *   _pubSignals[7] = numCandidates    (approved candidate count)
      *   _pubSignals[8] = choiceCommitment (Poseidon(candidateIndex, voterSecret, electionId))
+     *   _pubSignals[9] = payloadHash      (Hash of the IPFS CID for mempool protection)
      *
      * @param _electionId  Election to vote in
      * @param _ipfsCID     IPFS CID of the encrypted ballot
      * @param _pA          ZKP proof component A
      * @param _pB          ZKP proof component B
      * @param _pC          ZKP proof component C
-     * @param _pubSignals  9 public signals from the circuit
+     * @param _pubSignals  10 public signals from the circuit
      */
     function vote(
         uint256 _electionId,
@@ -980,7 +982,7 @@ contract Contract {
         uint[2] calldata _pA,
         uint[2][2] calldata _pB,
         uint[2] calldata _pC,
-        uint[9] calldata _pubSignals
+        uint[10] calldata _pubSignals
     ) external returns (bool) {
         if (_electionId > electionCounter) revert ElectionNotFound();
         Election storage election = elections[_electionId];
@@ -988,6 +990,12 @@ contract Contract {
         if (bytes(_ipfsCID).length == 0) revert EmptyInput();
         if (!isPaillierKeySet) revert KeyNotSet();
         if (address(voteVerifier) == address(0)) revert NoVerifier();
+
+        // ── 1. Mempool Front-Running Protection ──
+        // Ensure the ZKP is definitively bound to THIS specific ipfsCID payload.
+        // Convert Keccak256 hash to BN254 scalar field to match the SNARK circuit expectation.
+        uint256 expectedPayloadHash = uint256(keccak256(abi.encodePacked(_ipfsCID))) % 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+        if (_pubSignals[9] != expectedPayloadHash) revert ProofFailed();
 
         if (_pubSignals[2] != _electionId) revert InvalidElectionId();
         if (_pubSignals[0] != 18) revert InvalidAge();

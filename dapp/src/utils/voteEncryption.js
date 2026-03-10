@@ -27,6 +27,155 @@ function modPow(base, exp, modulus) {
 }
 
 /**
+ * Extended Euclidean Algorithm
+ */
+function gcdExtended(a, b) {
+  let x = 0n, y = 1n, u = 1n, v = 0n;
+  while (a !== 0n) {
+    let q = b / a;
+    let r = b % a;
+    let m = x - u * q;
+    let n = y - v * q;
+    b = a; a = r; x = u; y = v; u = m; v = n;
+  }
+  return [b, x, y];
+}
+
+/**
+ * Modular Inverse
+ */
+function modInverse(a, m) {
+  let [g, x, y] = gcdExtended(a, m);
+  if (g !== 1n) throw new Error("No inverse");
+  return (x % m + m) % m;
+}
+
+/**
+ * SHA-256 async helper
+ */
+async function sha256Hex(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Generate CDS Disjunctive "OR" Proof for Paillier Radix Election
+ */
+export async function generateCDSProof(nStr, cStr, rStr, c_index, valid_m_array) {
+  const n = BigInt(nStr);
+  const c = BigInt(cStr);
+  const r = BigInt(rStr);
+  const n_squared = n * n;
+  
+  const k = valid_m_array.length;
+  const u = [];
+  for (let i = 0; i < k; i++) {
+    let m_i = BigInt(valid_m_array[i]);
+    let g_inv_m = (1n - m_i * n) % n_squared;
+    if (g_inv_m < 0n) g_inv_m += n_squared;
+    u.push((c * g_inv_m) % n_squared);
+  }
+  
+  const a = new Array(k);
+  const e = new Array(k);
+  const z = new Array(k);
+  
+  const w = randomBigInt(n.toString(2).length - 1);
+  a[c_index] = modPow(w, n, n_squared);
+  
+  for (let i = 0; i < k; i++) {
+    if (i === c_index) continue;
+    e[i] = randomBigInt(256);
+    z[i] = randomBigInt(n.toString(2).length - 1);
+    const u_inv = modInverse(u[i], n_squared);
+    const z_n = modPow(z[i], n, n_squared);
+    const u_inv_e = modPow(u_inv, e[i], n_squared);
+    a[i] = (z_n * u_inv_e) % n_squared;
+  }
+  
+  let hash_input = n.toString() + "," + c.toString();
+  for (let i = 0; i < k; i++) {
+    hash_input += "," + a[i].toString();
+  }
+  
+  const E_hex = await sha256Hex(hash_input);
+  const E = BigInt("0x" + E_hex);
+  
+  let sum_e_fake = 0n;
+  for (let i = 0; i < k; i++) {
+    if (i !== c_index) sum_e_fake += e[i];
+  }
+  
+  const Q = 1n << 256n;
+  let e_c = (E - sum_e_fake) % Q;
+  if (e_c < 0n) e_c += Q;
+  e[c_index] = e_c;
+  
+  const r_pow_e = modPow(r, e[c_index], n);
+  z[c_index] = (w * r_pow_e) % n;
+  
+  return {
+    e: e.map(x => x.toString()),
+    z: z.map(x => x.toString()),
+    a: a.map(x => x.toString())
+  };
+}
+
+/**
+ * Verify CDS Disjunctive "OR" Proof
+ */
+export async function verifyCDSProof(nStr, cStr, proof, valid_m_array) {
+  try {
+    const n = BigInt(nStr);
+    const c = BigInt(cStr);
+    const n_squared = n * n;
+    const k = valid_m_array.length;
+    
+    if (!proof || !proof.e || !proof.z || !proof.a || proof.e.length !== k || proof.z.length !== k || proof.a.length !== k) {
+      return false;
+    }
+    
+    const e = proof.e.map(BigInt);
+    const z = proof.z.map(BigInt);
+    const a = proof.a.map(BigInt);
+    
+    let hash_input = n.toString() + "," + c.toString();
+    for (let i = 0; i < k; i++) {
+      hash_input += "," + a[i].toString();
+    }
+    const E_hex = await sha256Hex(hash_input);
+    const E = BigInt("0x" + E_hex);
+    
+    let sum_e = 0n;
+    for (let i = 0; i < k; i++) {
+      sum_e += e[i];
+    }
+    const Q = 1n << 256n;
+    
+    if ((sum_e % Q) !== (E % Q)) {
+      return false;
+    }
+    
+    for (let i = 0; i < k; i++) {
+      let m_i = BigInt(valid_m_array[i]);
+      let g_inv_m = (1n - m_i * n) % n_squared;
+      if (g_inv_m < 0n) g_inv_m += n_squared;
+      const u_i = (c * g_inv_m) % n_squared;
+      
+      const lhs = modPow(z[i], n, n_squared);
+      const rhs = (a[i] * modPow(u_i, e[i], n_squared)) % n_squared;
+      
+      if (lhs !== rhs) return false;
+    }
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
  * Generate a random BigInt with specified number of bits
  */
 function randomBigInt(bits) {
@@ -54,6 +203,26 @@ class PaillierPublicKey {
     this.g = this.n + 1n; // Generator (simplified)
   }
   
+  /**
+   * Encrypt a message returning the ciphertext and randomness
+   */
+  encryptWithR(plaintext) {
+    const m = BigInt(plaintext);
+
+    // Generate random r where 0 < r < n
+    let r;
+    do {
+      r = randomBigInt(this.n.toString(2).length);
+    } while (r >= this.n || r === 0n);
+
+    // Compute ciphertext: c = g^m * r^n mod n^2
+    const gm = modPow(this.g, m, this.nSquared);
+    const rn = modPow(r, this.n, this.nSquared);
+    const ciphertext = (gm * rn) % this.nSquared;
+
+    return { ciphertext: ciphertext.toString(), r: r.toString() };
+  }
+
   /**
    * Encrypt a message
    * @param {number|string|bigint} plaintext - The message to encrypt
@@ -131,9 +300,10 @@ export function computeVoteBlock(totalVoters) {
  * @param {string}        publicKeyN     - Paillier public key (n) as a decimal string
  * @param {number}        candidateIndex - 0-based index of the chosen candidate
  * @param {bigint|string} voteBlock      - Slot base B (from computeVoteBlock)
- * @returns {Promise<Object>} - { encrypted_vote, vote_block, encryption_method }
+ * @param {number}        numCandidates  - Number of valid candidate options to construct the proof
+ * @returns {Promise<Object>} - { encrypted_vote, vote_block, encryption_method, paillier_zkp }
  */
-export async function encryptVote(publicKeyN, candidateIndex, voteBlock) {
+export async function encryptVote(publicKeyN, candidateIndex, voteBlock, numCandidates = 1) {
   try {
     const publicKey = new PaillierPublicKey(publicKeyN);
     const B = BigInt(voteBlock);
@@ -141,12 +311,22 @@ export async function encryptVote(publicKeyN, candidateIndex, voteBlock) {
     // Place a single unit in the candidate's radix slot
     const plaintext = B ** BigInt(candidateIndex);
 
-    const encryptedVote = publicKey.encrypt(plaintext);
+    const { ciphertext: encryptedVote, r } = publicKey.encryptWithR(plaintext);
+    
+    // Generate valid plaintext set for the ZKP
+    const validPlaintexts = [];
+    for (let i = 0; i < numCandidates; i++) {
+      validPlaintexts.push(B ** BigInt(i));
+    }
+    
+    // Generate CDS proof of well-formedness
+    const paillier_zkp = await generateCDSProof(publicKeyN, encryptedVote, r, candidateIndex, validPlaintexts);
 
     return {
       encrypted_vote: encryptedVote,
       vote_block: B.toString(),
-      encryption_method: 'Paillier-RadixPack-JavaScript'
+      encryption_method: 'Paillier-RadixPack-JavaScript',
+      paillier_zkp: paillier_zkp
     };
   } catch (error) {
     console.error('Encryption error:', error);
@@ -197,5 +377,7 @@ export default {
   encryptVote,
   getPublicKey,
   getCandidateIndex,
-  computeVoteBlock
+  computeVoteBlock,
+  generateCDSProof,
+  verifyCDSProof
 };

@@ -5,8 +5,8 @@ import MessageAlert from '../components/MessageAlert';
 import Navbar from '../components/Navbar';
 import IPFSClient from '../utils/ipfsClient';
 import { performHomomorphicAddition } from '../utils/homomorphicAggregator';
-import { computeVoteBlock } from '../utils/voteEncryption';
-import { extractVoteCounts, combinePartialDecryptions } from '../utils/thresholdDecryption';
+import { computeVoteBlock, verifyCDSProof } from '../utils/voteEncryption';
+import { extractVoteCounts, combinePartialDecryptions, verifyDecryptionProof } from '../utils/thresholdDecryption';
 
 export default function OrganizerManageElection() {
   const navigate = useNavigate();
@@ -277,7 +277,12 @@ export default function OrganizerManageElection() {
       const ciphertexts = [];
       const orderedCIDs = [];   // CIDs in nullifier order — needed for tallyInputHash
       let voteBlockFromIPFS = null;
-      
+      let validPlaintexts = [];
+
+      // We need candidate count to generate valid plaintext array for the ZKP verification
+      const approvedCandidates = await deployedContract.methods.getApprovedCandidates(electionId).call();
+      const numCandidates = approvedCandidates.length;
+
       for (let i = 0; i < nullifiers.length; i++) {
         const nullifier = nullifiers[i];
         const ipfsCID = await deployedContract.methods.getZKPVote(electionId, nullifier).call();
@@ -292,12 +297,30 @@ export default function OrganizerManageElection() {
           const votePackage = await ipfsClient.retrieveJSON(ipfsCID);
           const ct = votePackage.encrypted_vote ?? votePackage.ciphertext;
           if (!ct) throw new Error(`Vote package missing encrypted_vote field (CID: ${ipfsCID})`);
-          ciphertexts.push(ct);
+          
           // Capture vote_block from first valid package — all votes must use the same B
           if (voteBlockFromIPFS === null && votePackage.vote_block) {
             voteBlockFromIPFS = String(votePackage.vote_block);
+            const B_bigint = BigInt(voteBlockFromIPFS);
+            for (let c = 0; c < numCandidates; c++) {
+              validPlaintexts.push(B_bigint ** BigInt(c));
+            }
           }
-          console.log(`Retrieved vote ${i + 1}/${nullifiers.length} from IPFS`);
+
+          // Step 4.5: CDS Proof Verification (Zero-Knowledge Proof of Well-Formedness)
+          if (!votePackage.paillier_zkp) {
+            console.warn(`[SECURITY] Vote CID ${ipfsCID} missing paillier_zkp. Dropping malicious vote.`);
+            continue; // Skip multiplying this ciphertext
+          }
+
+          const isWellFormed = await verifyCDSProof(publicKeyN, ct, votePackage.paillier_zkp, validPlaintexts);
+          if (!isWellFormed) {
+            console.warn(`[SECURITY] Vote CID ${ipfsCID} failed CDS proof verification. Dropping malicious vote.`);
+            continue; // Skip multiplying this ciphertext
+          }
+          
+          ciphertexts.push(ct);
+          console.log(`Retrieved & Verified vote ${i + 1}/${nullifiers.length} from IPFS`);
         } catch (ipfsError) {
           console.error(`Failed to retrieve vote from IPFS (${ipfsCID}):`, ipfsError);
           throw new Error(`Failed to retrieve vote ${i + 1} from IPFS: ${ipfsError.message}`);
@@ -393,23 +416,65 @@ export default function OrganizerManageElection() {
       const pds = [];
       const trusteeAddrs = await deployedContract.methods.getTrusteeAddresses().call();
 
-      for (let addr of submitters) {
-         let pdStr = await deployedContract.methods.getPartialDecryption(electionId, addr).call();
-         const idx = trusteeAddrs.findIndex(a => a.toLowerCase() === addr.toLowerCase()) + 1;
-         pds.push({ x: idx, pd: pdStr });
-      }
+        setMessage('Combining Partial Decryptions...');
+        const tally = await deployedContract.methods.getEncryptedTally(electionId).call();
+        if (!tally.tallyStored) throw new Error('Tally not stored yet.');
 
-      setMessage('Combining Partial Decryptions...');
-      const tally = await deployedContract.methods.getEncryptedTally(electionId).call();
-      if (!tally.tallyStored) throw new Error('Tally not stored yet.');
+        let tallyObj;
+        try { tallyObj = JSON.parse(tally.encryptedTally); } catch { tallyObj = { encrypted_total: tally.encryptedTally }; }
 
-      let tallyObj;
-      try { tallyObj = JSON.parse(tally.encryptedTally); } catch { tallyObj = { encrypted_total: tally.encryptedTally }; }
+        const publicKeyN = await deployedContract.methods.getPaillierPublicKey().call();
 
-      const publicKeyN = await deployedContract.methods.getPaillierPublicKey().call();
+        // Load Chaum-Pedersen verification keys if available
+        let shareData = {};
+        try {
+            const mod = await import('../config/verification_shares.json');
+            shareData = mod.default || mod;
+        } catch (e) {
+            console.warn("No verification shares found for ZKP.");
+        }
+
+        for (let addr of submitters) {
+           let pdStr = await deployedContract.methods.getPartialDecryption(electionId, addr).call();
+           const idx = trusteeAddrs.findIndex(a => a.toLowerCase() === addr.toLowerCase()) + 1;
+
+           let pdValue = pdStr;
+           try {
+               const parsed = JSON.parse(pdStr);
+               if (parsed.pd_i && parsed.proof) {
+                   pdValue = parsed.pd_i;
+                   
+                   // Verify DoS protection
+                   if (shareData && shareData.v && shareData.shares) {
+                        const trusteeShare = shareData.shares.find(s => s.share_index === idx);
+                        if (trusteeShare && trusteeShare.v_i) {
+                            const V_i = trusteeShare.v_i;
+                            console.log(`Verifying Trustee ${idx} ZKP Proof...`);
+                            
+                            const isValid = await verifyDecryptionProof(
+                                tallyObj.encrypted_total, // C
+                                shareData.v,                 // v
+                                V_i,                         // V_i
+                                pdValue,                     // PD_i
+                                parsed.proof.e,              // e
+                                parsed.proof.z,              // z
+                                publicKeyN                   // n
+                            );
+                            if (!isValid) {
+                                throw new Error(`Trustee ${idx} mathematical ZKP verification failed! Malicious Partial Decryption detected.`);
+                            }
+                        }
+                   }
+               }
+           } catch(e) {
+               if (e.message.includes('Malicious')) throw e; // Bubble up DoS alert
+           }
+
+           pds.push({ x: idx, pd: pdValue });
+        }
+
       const plaintext = combinePartialDecryptions(pds, publicKeyN);
 
-      // 3. Extract per-candidate vote counts
       const approvedCandidates = await deployedContract.methods.getApprovedCandidates(electionId).call();
       const voteBlock = tallyObj.vote_block
         ? BigInt(tallyObj.vote_block)

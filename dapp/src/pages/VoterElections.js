@@ -207,7 +207,9 @@ export default function VoterElections() {
       const totalVoters = await deployedContract.methods.getTotalRegisteredVoters().call();
       const voteBlock = computeVoteBlock(totalVoters);
       const candidateIndex = getCandidateIndex(election.candidates, candidateAddress);
-      const encryptedVoteData = await encryptVote(publicKeyN, candidateIndex, voteBlock);
+      
+      const numCandidates = election.candidates.length;
+      const encryptedVoteData = await encryptVote(publicKeyN, candidateIndex, voteBlock, numCandidates);
 
       // ── Step 2: Upload encrypted ballot to IPFS ────────────────────────
       setMessage('Uploading vote...');
@@ -221,7 +223,8 @@ export default function VoterElections() {
         election_id: electionId,
         encrypted_vote: encryptedVoteData.encrypted_vote,
         vote_block: encryptedVoteData.vote_block,
-        encryption_method: encryptedVoteData.encryption_method
+        encryption_method: encryptedVoteData.encryption_method,
+        paillier_zkp: encryptedVoteData.paillier_zkp
       };
       const ipfsCID = await ipfsClient.uploadJSON(votePackage);
       await ipfsClient.pin(ipfsCID);
@@ -237,10 +240,9 @@ export default function VoterElections() {
       const { pA, pB, pC, pubSignals, choiceCommitmentHex } = await generateVoteProof(
         ic, walletAddress, voterSecret, electionId,
         candidateIndex,              // NEW: 0-based index of chosen candidate
-        election.candidates.length   // NEW: total approved candidates
-      );
-
-      // ── Step 4: Submit ZKP proof + IPFS CID to blockchain ───────────────
+          election.candidates.length,  // NEW: total approved candidates
+          ipfsCID                      // NEW: Mempool Front-Running mitigation
+        );
       setMessage('Submitting...');
 
       await deployedContract.methods

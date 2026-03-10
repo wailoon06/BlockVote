@@ -4,7 +4,14 @@ import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
 import MessageAlert from '../components/MessageAlert';
 import { getDeployedContract } from '../utils/contractUtils';
-import { decryptShareY, computeTrusteePartialDecryption } from '../utils/thresholdDecryption';
+import { 
+    decryptShareY, 
+    computeTrusteePartialDecryption, 
+    generateDecryptionProof 
+} from '../utils/thresholdDecryption';
+import IPFSClient from '../utils/ipfsClient';
+import { performHomomorphicAddition } from '../utils/homomorphicAggregator';
+import { verifyCDSProof } from '../utils/voteEncryption';
 
 export default function TrusteeDashboard() {
   const navigate = useNavigate();
@@ -149,9 +156,88 @@ export default function TrusteeDashboard() {
 
         let tallyPayload;
         try { tallyPayload = JSON.parse(election.encryptedTally); } catch { tallyPayload = { encrypted_total: election.encryptedTally }; }
-        const pd_i = computeTrusteePartialDecryption(tallyPayload.encrypted_total, s_i, pubKeyN);
 
-        await deployedContract.methods.submitPartialDecryption(election.id, pd_i).send({
+          // --- Failsafe: Verify the Organizer's Encrypted Tally ---
+          setMessage('Verifying ZKP proofs and homomorphic tallies. This protects against a malicious organizer...');
+          
+          try {
+              const nullifiers = await deployedContract.methods.getZKPVoteNullifiers(election.id).call();
+              const ipfsClient = new IPFSClient();
+              const isIPFSAvailable = await ipfsClient.isAvailable();
+              if (!isIPFSAvailable) throw new Error('IPFS Desktop must be running.');
+              
+              const approvedCandidates = await deployedContract.methods.getApprovedCandidates(election.id).call();
+              const numCandidates = approvedCandidates.length;
+
+              const ciphertexts = [];
+              let voteBlockFromIPFS = null;
+              let validPlaintexts = [];
+
+              for (let i = 0; i < nullifiers.length; i++) {
+                const nullifier = nullifiers[i];
+                const ipfsCID = await deployedContract.methods.getZKPVote(election.id, nullifier).call();
+                if (!ipfsCID) continue;
+
+                const votePackage = await ipfsClient.retrieveJSON(ipfsCID);
+                const ct = votePackage.encrypted_vote ?? votePackage.ciphertext;
+                if (!ct) continue;
+
+                if (voteBlockFromIPFS === null && votePackage.vote_block) {
+                  voteBlockFromIPFS = String(votePackage.vote_block);
+                  const B_bigint = BigInt(voteBlockFromIPFS);
+                  for (let c = 0; c < numCandidates; c++) {
+                    validPlaintexts.push(B_bigint ** BigInt(c));
+                  }
+                }
+
+                if (!votePackage.paillier_zkp || !(await verifyCDSProof(pubKeyN, ct, votePackage.paillier_zkp, validPlaintexts))) {
+                    console.warn(`[Trustee Security] Invalid or missing CDS proof for vote ${ipfsCID}. Dropping vote...`);
+                    continue; // Skip, exactly as Organizer does
+                }
+                ciphertexts.push(ct);
+              }
+              
+              const expectedTotal = performHomomorphicAddition(pubKeyN, ciphertexts);
+              
+              let organizerTotal = String(tallyPayload.encrypted_total);
+              
+              if (organizerTotal !== String(expectedTotal)) {
+                  console.error("Mismatch:", organizerTotal, expectedTotal);
+                  throw new Error('MALICIOUS ORGANIZER DETECTED! Tally does not match the IPFS CIDs. Refusing to decrypt.');
+              }
+          } catch(e) {
+              setMessage('Verification aborted: ' + e.message);
+              setMessageType('danger');
+              setSubmitting(prev => ({ ...prev, [election.id]: false }));
+              return;
+          }
+          // --- Verification Successful, Proceed with Decryption ---
+
+          // 1. Generate standard partial decryption
+          const rawPd_i = computeTrusteePartialDecryption(tallyPayload.encrypted_total, s_i, pubKeyN);
+
+          // 2. Wrap it with Chaum-Pedersen ZKP for robust DoS protection
+          // shareData.v and shareData.v_i are implicitly handled if the file was generated nicely.
+          let finalSubmitPayload = rawPd_i;
+          if (shareData.v && shareData.v_i) {
+            console.log("Generating Zero-Knowledge Proof for Partial Decryption...");
+            const zkp = await generateDecryptionProof(
+              tallyPayload.encrypted_total, // C
+              s_i,                          // s_i
+              shareData.v,                  // generic generator v
+              shareData.v_i,                // trustee's specific public verification share V_i
+              pubKeyN                       // Paillier mod n
+            );
+            finalSubmitPayload = JSON.stringify({
+              pd_i: zkp.pd_i,
+              proof: { e: zkp.e, z: zkp.z }
+            });
+          } else {
+             // Fallback for older election arrays before the DoS patch
+             console.warn("No public verification share found. Falling back to unprotected Partial Decryption.");
+          }
+
+          await deployedContract.methods.submitPartialDecryption(election.id, finalSubmitPayload).send({
             from: walletAddress,
             gas: 3000000
         });

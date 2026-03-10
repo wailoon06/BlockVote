@@ -132,6 +132,8 @@ export async function formatProofForSolidity(proof, publicSignals) {
 
 // ── VoteWithICAgeCheck circuit helpers ───────────────────────────────────────
 
+import { ethers } from 'ethers';
+
 /**
  * Build the circuit input object for regCheck.
  * Used by both generateRegistrationProof and generateVoteProof.
@@ -142,8 +144,9 @@ export async function formatProofForSolidity(proof, publicSignals) {
  * @param {string|number} electionId      - target election (0 = registration)
  * @param {number}        candidateIndex  - 0-based chosen candidate (0 for registration)
  * @param {number}        numCandidates   - total approved candidates (1 for registration)
+ * @param {string}        ipfsCID         - IPFS CID of the encrypted ballot (empty string for registration)
  */
-async function buildVoteCircuitInput(ic, walletAddress, voterSecret, electionId, candidateIndex = 0, numCandidates = 1) {
+async function buildVoteCircuitInput(ic, walletAddress, voterSecret, electionId, candidateIndex = 0, numCandidates = 1, ipfsCID = "") {
   const icDigits = icToDigitArray(ic);               // private
   const addressField = addressToFieldElement(walletAddress); // private
 
@@ -155,7 +158,17 @@ async function buildVoteCircuitInput(ic, walletAddress, voterSecret, electionId,
 
   const commitment       = await computeCommitment(walletAddress, voterSecret);                     // public
   const nullifier        = await computeNullifier(voterSecret, electionId);                         // public
-  const choiceCommitment = await computeChoiceCommitment(candidateIndex, voterSecret, electionId);  // public (NEW)
+  const choiceCommitment = await computeChoiceCommitment(candidateIndex, voterSecret, electionId);  // public 
+
+  // Compute the payloadHash explicitly to definitively bind the IPFS payload to the proof.
+  // Use modulo arithmetic on the BN254 scalar field exactly as the smart contract does.
+  let payloadHashField = "0";
+  if (ipfsCID !== "") {
+    const keccakHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(ipfsCID));
+    const keccakBigInt = BigInt(keccakHash);
+    const snarkScalarField = BigInt("21888242871839275222246405745257275088548364400416034343698204186575808495617");
+    payloadHashField = (keccakBigInt % snarkScalarField).toString();
+  }
 
   return {
     // ── private ──────────────────────────────
@@ -173,6 +186,7 @@ async function buildVoteCircuitInput(ic, walletAddress, voterSecret, electionId,
     currentDay:       currentDay.toString(),
     numCandidates:    numCandidates.toString(),  // NEW
     choiceCommitment: choiceCommitment,          // NEW
+    payloadHash:      payloadHashField,          // NEW (Mempool binding)
   };
 }
 
@@ -297,9 +311,10 @@ export async function generateRegistrationProof(ic, walletAddress, voterSecret) 
  * @param {string|number} electionId      - the election being voted in
  * @param {number}        candidateIndex  - 0-based index of chosen candidate
  * @param {number}        numCandidates   - total approved candidates in the election
+ * @param {string}        ipfsCID         - The IPFS CID of the uploaded encrypted ballot
  * @returns {Promise<{proof, publicSignals, pA, pB, pC, pubSignals, nullifierHex, choiceCommitmentHex}>}
  */
-export async function generateVoteProof(ic, walletAddress, voterSecret, electionId, candidateIndex, numCandidates) {
+export async function generateVoteProof(ic, walletAddress, voterSecret, electionId, candidateIndex, numCandidates, ipfsCID) {
   console.log('[ZKP] Generating vote proof (regCheck, electionId=' + electionId + ', candidateIndex=' + candidateIndex + ')...');
 
   if (candidateIndex === undefined || candidateIndex === null) {
@@ -308,11 +323,14 @@ export async function generateVoteProof(ic, walletAddress, voterSecret, election
   if (!numCandidates || numCandidates < 1) {
     throw new Error('numCandidates must be >= 1 for vote proof generation.');
   }
+  if (!ipfsCID) {
+    throw new Error('ipfsCID is required to dynamically bind the ZKP to the payload.');
+  }
 
   // Fast pre-flight check
   validateICAge(ic);
 
-  const input = await buildVoteCircuitInput(ic, walletAddress, voterSecret, electionId, candidateIndex, numCandidates);
+  const input = await buildVoteCircuitInput(ic, walletAddress, voterSecret, electionId, candidateIndex, numCandidates, ipfsCID);
 
   console.log('[ZKP] Loading vote circuit artifacts...');
   const wasmBuffer = await loadVoteWasm();
