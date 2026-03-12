@@ -152,7 +152,7 @@ export default function AdminPanel() {
         .verifyOrganizer(address)
         .send({ from: walletAddress });
 
-      setMessage('✅ Organizer approved successfully!');
+      setMessage('Organizer approved successfully!');
       setMessageType('success');
       
       // Reload pending list and statistics
@@ -178,7 +178,7 @@ export default function AdminPanel() {
         <Navbar walletAddress={walletAddress} onLogout={handleLogout} userRole="admin" />
         <div style={{ maxWidth: '700px', margin: '0 auto', padding: '3rem 1.5rem', paddingTop: 'calc(70px + 3rem)', textAlign: 'center' }}>
           <MessageAlert message={message} type={messageType} onClose={() => setMessage('')} />
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚫</div>
+          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}></div>
           <h2 style={{ color: '#1e3a5f', marginBottom: '1rem' }}>Access Denied</h2>
           <p style={{ color: '#6c757d', marginBottom: '2rem' }}>You must be the admin to access this panel.</p>
         </div>
@@ -378,7 +378,7 @@ export default function AdminPanel() {
             textAlign: 'center',
             padding: '3rem 2rem'
           }}>
-            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>✅</div>
+            <div style={{ fontSize: '4rem', marginBottom: '1rem' }}></div>
             <h4 style={{ color: '#1e3a5f', marginBottom: '0.5rem' }}>No Pending Applications</h4>
             <p style={{ color: '#6c757d' }}>All organizer applications have been processed.</p>
           </div>

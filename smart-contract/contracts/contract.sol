@@ -59,6 +59,9 @@ error InvalidThreshold();
 error InsufficientTrustees();
 error ThresholdTooLarge();
 error TimingError();
+error ShareNotCommitted();
+error ThresholdNotMet();
+error PDHashMismatch();
 
 contract Contract {
     // ===== PHASE 1: Paillier & Trustee Management =====
@@ -86,9 +89,9 @@ contract Contract {
     // ===== EXISTING STRUCTS =====
     struct Voter {
         address wallet;
-        string name;
+        bytes32 nameHash;
         bytes32 icHash;
-        string email;
+        bytes32 emailHash;
         uint8 status;       // 0=PENDING_VERIFICATION, 1=VERIFIED
         bytes32 verificationCode;
         uint256 registeredAt;
@@ -98,9 +101,9 @@ contract Contract {
 
     struct Candidate {
         address wallet;
-        string name;
+        bytes32 nameHash;
         bytes32 icHash;
-        string email;
+        bytes32 emailHash;
         string party;
         string manifesto;
         uint8 status;       // 0=PENDING_VERIFICATION, 1=VERIFIED
@@ -113,7 +116,7 @@ contract Contract {
     struct Organizer {
         address wallet;
         string organizationName;
-        string email;
+        bytes32 emailHash;
         string description;
         uint8 status;       // 0=PENDING, 1=APPROVED, 2=REJECTED
         uint256 registeredAt;
@@ -165,7 +168,7 @@ contract Contract {
     mapping(uint256 => Election) public elections;
 
     mapping(bytes32 => bool) private usedICs;
-    mapping(string => bool) private usedEmails;
+    mapping(bytes32 => bool) private usedEmails;
 
     mapping(address => Voter) public voters;
     mapping(address => Candidate) public candidates;
@@ -359,21 +362,22 @@ contract Contract {
     
     event VoterRegistered(
         address indexed wallet,
-        string name,
-        string email,
+        bytes32 nameHash,
+        bytes32 emailHash,
         uint256 timestamp
     );
     
     event CandidateRegistered(
         address indexed wallet,
-        string name,
-        string email,
+        bytes32 nameHash,
+        bytes32 emailHash,
         uint256 timestamp
     );
 
     event OrganizerRegistered(
         address indexed applicant,
         string organizationName,
+        bytes32 emailHash,
         uint256 timestamp
     );
 
@@ -429,43 +433,41 @@ contract Contract {
     );
 
     // Common functions
-    function isICRegistered(string calldata _ic) external view returns (bool) {
-        bytes32 icHash = keccak256(abi.encodePacked(_ic));
-        return usedICs[icHash];
+    function isICRegistered(bytes32 _icHash) external view returns (bool) {
+        return usedICs[_icHash];
     }
     
-    function isEmailRegistered(string calldata _email) external view returns (bool) {
-        return usedEmails[_email];
+    function isEmailRegistered(bytes32 _emailHash) external view returns (bool) {
+        return usedEmails[_emailHash];
     }
     
     //////////////////
     // Voter Logics //
     //////////////////
     function registerVoter(
-        string calldata _name,
-        string calldata _ic,
-        string calldata _email
+        bytes32 _nameHash,
+        bytes32 _icHash,
+        bytes32 _emailHash
     ) external returns (bytes32) {
         if (voters[msg.sender].isRegistered) revert AlreadyRegistered();
 
-        bytes32 icHash = keccak256(abi.encodePacked(_ic));
-        if (usedICs[icHash]) revert ICAlreadyUsed();
-        if (usedEmails[_email]) revert EmailAlreadyUsed();
+        if (usedICs[_icHash]) revert ICAlreadyUsed();
+        if (usedEmails[_emailHash]) revert EmailAlreadyUsed();
         
         bytes32 verificationCode = keccak256(
             abi.encodePacked(
                 msg.sender,
-                _name,
-                _ic,
-                _email,
+                _nameHash,
+                _icHash,
+                _emailHash,
                 block.timestamp
             )
         );
         voters[msg.sender] = Voter({
             wallet: msg.sender,
-            name: _name,
-            icHash: icHash,
-            email: _email,
+            nameHash: _nameHash,
+            icHash: _icHash,
+            emailHash: _emailHash,
             status: 0,
             verificationCode: verificationCode,
             registeredAt: block.timestamp,
@@ -473,10 +475,10 @@ contract Contract {
             isRegistered: true
         });
         voterAddresses.push(msg.sender);
-        usedICs[icHash] = true;
-        usedEmails[_email] = true;
+        usedICs[_icHash] = true;
+        usedEmails[_emailHash] = true;
         
-        emit VoterRegistered(msg.sender, _name, _email, block.timestamp);
+        emit VoterRegistered(msg.sender, _nameHash, _emailHash, block.timestamp);
         
         return verificationCode;
     }
@@ -538,8 +540,8 @@ contract Contract {
     }
     
     function getVoterInfo(address _wallet) external view returns (
-        string memory name,
-        string memory email,
+        bytes32 nameHash,
+        bytes32 emailHash,
         string memory status,
         uint256 registeredAt,
         uint256 verifiedAt
@@ -548,8 +550,8 @@ contract Contract {
         
         Voter memory voter = voters[_wallet];
         return (
-            voter.name,
-            voter.email,
+            voter.nameHash,
+            voter.emailHash,
             voter.status == 1 ? "VERIFIED" : "PENDING_VERIFICATION",
             voter.registeredAt,
             voter.verifiedAt
@@ -594,31 +596,31 @@ contract Contract {
 
     
     function registerCandidate(
-        string calldata _name,
-        string calldata _ic,
-        string calldata _email,
+        bytes32 _nameHash,
+        bytes32 _icHash,
+        bytes32 _emailHash,
         string calldata _party,
         string calldata _manifesto
     ) external returns (bytes32) {
         if (candidates[msg.sender].isRegistered) revert AlreadyRegistered();
-        bytes32 icHash = keccak256(abi.encodePacked(_ic));
-        if (usedICs[icHash]) revert ICAlreadyUsed();
-        if (usedEmails[_email]) revert EmailAlreadyUsed();
+        
+        if (usedICs[_icHash]) revert ICAlreadyUsed();
+        if (usedEmails[_emailHash]) revert EmailAlreadyUsed();
         
         bytes32 verificationCode = keccak256(
             abi.encodePacked(
                 msg.sender,
-                _name,
-                _ic,
-                _email,
+                _nameHash,
+                _icHash,
+                _emailHash,
                 block.timestamp
             )
         );
         candidates[msg.sender] = Candidate({
             wallet: msg.sender,
-            name: _name,
-            icHash: icHash,
-            email: _email,
+            nameHash: _nameHash,
+            icHash: _icHash,
+            emailHash: _emailHash,
             party: _party,
             manifesto: _manifesto,
             status: 0,
@@ -628,10 +630,10 @@ contract Contract {
             isRegistered: true
         });
         candidateAddresses.push(msg.sender);
-        usedICs[icHash] = true;
-        usedEmails[_email] = true;
+        usedICs[_icHash] = true;
+        usedEmails[_emailHash] = true;
         
-        emit CandidateRegistered(msg.sender, _name, _email, block.timestamp);
+        emit CandidateRegistered(msg.sender, _nameHash, _emailHash, block.timestamp);
         
         return verificationCode;
     }
@@ -661,8 +663,8 @@ contract Contract {
     }
     
     function getCandidateInfo(address _wallet) external view returns (
-        string memory name,
-        string memory email,
+        bytes32 nameHash,
+        bytes32 emailHash,
         string memory party,
         string memory manifesto,
         string memory status,
@@ -673,8 +675,8 @@ contract Contract {
         
         Candidate memory candidate = candidates[_wallet];
         return (
-            candidate.name,
-            candidate.email,
+            candidate.nameHash,
+            candidate.emailHash,
             candidate.party,
             candidate.manifesto,
             candidate.status == 1 ? "VERIFIED" : "PENDING_VERIFICATION",
@@ -685,17 +687,16 @@ contract Contract {
 
     function registerOrganizer(
         string calldata _organizationName,
-        string calldata _email,
+        bytes32 _emailHash,
         string calldata _description
     ) external returns (bool) {
         if (organizers[msg.sender].isRegistered) revert AlreadyRegistered();
         if (bytes(_organizationName).length == 0) revert EmptyInput();
-        if (bytes(_email).length == 0) revert EmptyInput();
         
         organizers[msg.sender] = Organizer({
             wallet: msg.sender,
             organizationName: _organizationName,
-            email: _email,
+            emailHash: _emailHash,
             description: _description,
             status: 0,
             registeredAt: block.timestamp,
@@ -704,7 +705,7 @@ contract Contract {
         
         organizerList.push(msg.sender);
         
-        emit OrganizerRegistered(msg.sender, _organizationName, block.timestamp);
+        emit OrganizerRegistered(msg.sender, _organizationName, _emailHash, block.timestamp);
         
         return true;
     }
@@ -722,7 +723,7 @@ contract Contract {
 
     function getOrganizerInfo(address _applicant) external view returns (
         string memory organizationName,
-        string memory email,
+        bytes32 emailHash,
         string memory description,
         string memory status,
         uint256 registeredAt
@@ -733,7 +734,7 @@ contract Contract {
         string memory statusStr = org.status == 1 ? "APPROVED" : (org.status == 2 ? "REJECTED" : "PENDING");
         return (
             org.organizationName,
-            org.email,
+            org.emailHash,
             org.description,
             statusStr,
             org.registeredAt
@@ -1108,6 +1109,7 @@ contract Contract {
      */
     function submitPartialDecryption(uint256 _electionId, string calldata _pd) external onlyTrustee {
         if (!elections[_electionId].tallyStored) revert TallyNotStored();
+        if (!trustees[msg.sender].hasSubmittedCommitment) revert ShareNotCommitted();
         if (bytes(partialDecryptions[_electionId][msg.sender]).length == 0) {
             partialDecryptionSubmitters[_electionId].push(msg.sender);
         }
@@ -1128,13 +1130,24 @@ contract Contract {
      *      Requires that enough decryption shares have been registered.
      * @param _electionId The election ID
      * @param _decryptedResult JSON-encoded decrypted tally (e.g. per-candidate totals)
+     * @param _pdInputHash Hash of concatenated Partial Decryptions to prove integrity
      */
-    function publishResults(uint256 _electionId, string calldata _decryptedResult) external {
+    function publishResults(uint256 _electionId, string calldata _decryptedResult, bytes32 _pdInputHash) external {
         if (elections[_electionId].id == 0) revert ElectionNotFound();
         if (msg.sender != admin && msg.sender != elections[_electionId].organizer) revert Unauthorized();
         if (!elections[_electionId].tallyStored) revert TallyNotStored();
         if (elections[_electionId].resultsPublished) revert AlreadyPublished();
         if (bytes(_decryptedResult).length == 0) revert EmptyInput();
+        
+        uint256 submittedCount = partialDecryptionSubmitters[_electionId].length;
+        if (submittedCount < threshold) revert ThresholdNotMet();
+
+        bytes memory packed;
+        for (uint256 i = 0; i < submittedCount; i++) {
+            address trusteeAddr = partialDecryptionSubmitters[_electionId][i];
+            packed = abi.encodePacked(packed, partialDecryptions[_electionId][trusteeAddr]);
+        }
+        if (keccak256(packed) != _pdInputHash) revert PDHashMismatch();
         
         elections[_electionId].decryptedResult = _decryptedResult;
         elections[_electionId].resultsPublished = true;

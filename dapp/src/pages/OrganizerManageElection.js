@@ -368,10 +368,10 @@ export default function OrganizerManageElection() {
         .storeEncryptedTally(electionId, tallyPayload, tallyInputHash)
         .send({ from: walletAddress });
 
-      setMessage(`✅ Votes tallied (${ciphertexts.length} total).`);
+      setMessage(`Votes tallied (${ciphertexts.length} total).`);
       setMessageType('success');
 
-      console.log('📊 Aggregation Summary:');
+      console.log('  Aggregation Summary:');
       console.log('  Vote Count:', ciphertexts.length);
       console.log('  Encrypted Total:', encryptedTotal);
 
@@ -405,7 +405,7 @@ export default function OrganizerManageElection() {
     setMessageType('info');
 
     try {
-      const { deployedContract } = await getDeployedContract();
+      const { deployedContract, web3 } = await getDeployedContract();
       
       const submitters = await deployedContract.methods.getPartialDecryptionSubmitters(electionId).call();
       
@@ -434,8 +434,12 @@ export default function OrganizerManageElection() {
             console.warn("No verification shares found for ZKP.");
         }
 
+        const pdStringsToHash = [];
+
         for (let addr of submitters) {
            let pdStr = await deployedContract.methods.getPartialDecryption(electionId, addr).call();
+           pdStringsToHash.push({ t: 'string', v: pdStr });
+
            const idx = trusteeAddrs.findIndex(a => a.toLowerCase() === addr.toLowerCase()) + 1;
 
            let pdValue = pdStr;
@@ -493,8 +497,10 @@ export default function OrganizerManageElection() {
         published_at: new Date().toISOString(),
       });
 
+      const pdInputHash = web3.utils.soliditySha3(...pdStringsToHash);
+
       await deployedContract.methods
-        .publishResults(electionId, resultPayload)
+        .publishResults(electionId, resultPayload, pdInputHash)
         .send({ from: walletAddress });
 
       setMessage('✅ Results published successfully!');

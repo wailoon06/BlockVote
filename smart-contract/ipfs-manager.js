@@ -1,10 +1,3 @@
-/**
- * IPFS Manager for Phase 2
- * 
- * Handles uploading and retrieving encrypted votes to/from IPFS Desktop.
- * Uses IPFS HTTP API (default port 5001)
- */
-
 const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');

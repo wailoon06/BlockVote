@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
-import { normalizeIC } from '../utils/icHashUtils';
+import { hashIC, hashString } from '../utils/icHashUtils';
 import Navbar from '../components/Navbar';
 import MessageAlert from '../components/MessageAlert';
 
@@ -79,11 +79,12 @@ export default function Register() {
 
       const { deployedContract } = await getDeployedContract();
 
-      // Normalize IC format before sending to contract
-      const normalizedIC = normalizeIC(formData.ic);
+      const nameHash = hashString(formData.name);
+      const emailHash = hashString(formData.email);
+      const icHash = hashIC(formData.ic);
 
       const result = await deployedContract.methods
-        .registerVoter(formData.name, normalizedIC, formData.email)
+        .registerVoter(nameHash, icHash, emailHash)
         .send({ from: walletAddress });
 
       setMessage('Registration successful! Redirecting to verification...');

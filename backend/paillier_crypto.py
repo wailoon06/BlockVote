@@ -3,28 +3,8 @@ Paillier Homomorphic Encryption Implementation
 """
 
 import secrets
-from math import gcd
+from math import gcd, lcm
 from typing import Tuple
-
-
-def lcm(a: int, b: int) -> int:
-    """Compute least common multiple"""
-    return abs(a * b) // gcd(a, b)
-
-
-def mod_inverse(a: int, m: int) -> int:
-    """Compute modular multiplicative inverse using extended Euclidean algorithm"""
-    if gcd(a, m) != 1:
-        raise ValueError("Modular inverse does not exist")
-    
-    # Extended Euclidean Algorithm
-    m0, x0, x1 = m, 0, 1
-    while a > 1:
-        q = a // m
-        m, a = a % m, m
-        x0, x1 = x1 - q * x0, x0
-    
-    return x1 + m0 if x1 < 0 else x1
 
 
 def is_prime(n: int, k: int = 40) -> bool:
@@ -90,8 +70,9 @@ class PaillierPublicKey:
                 break
         
         # c = g^m * r^n mod n^2
-        ciphertext = (pow(self.g, plaintext, self.n_squared) * 
-                     pow(r, self.n, self.n_squared)) % self.n_squared
+        # optimized gm = (1 + m * n) mod n^2 since g = n + 1
+        gm = (1 + plaintext * self.n) % self.n_squared
+        ciphertext = (gm * pow(r, self.n, self.n_squared)) % self.n_squared
         
         return ciphertext
     
@@ -117,7 +98,7 @@ class PaillierPrivateKey:
         self.q = q
         self.public_key = public_key
         self.lambda_value = lcm(p - 1, q - 1)
-        self.mu = mod_inverse(self.lambda_value, public_key.n)
+        self.mu = pow(self.lambda_value, -1, public_key.n)
     
     def decrypt(self, ciphertext: int) -> int:
         """Decrypt a ciphertext"""

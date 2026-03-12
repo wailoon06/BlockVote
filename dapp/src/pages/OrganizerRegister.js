@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
+import { hashString } from '../utils/icHashUtils';
 import MessageAlert from '../components/MessageAlert';
 import Navbar from '../components/Navbar';
 
@@ -93,10 +94,11 @@ export default function OrganizerRegister() {
       const { web3, deployedContract } = await getDeployedContract();
 
       // Call registerOrganizer function
+      const emailHash = hashString(formData.email);
       const result = await deployedContract.methods
         .registerOrganizer(
           formData.organizationName,
-          formData.email,
+          emailHash,
           formData.description
         )
         .send({ from: walletAddress });

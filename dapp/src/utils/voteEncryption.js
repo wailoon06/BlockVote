@@ -209,14 +209,15 @@ class PaillierPublicKey {
   encryptWithR(plaintext) {
     const m = BigInt(plaintext);
 
-    // Generate random r where 0 < r < n
+    // Generate random r where 0 < r < n and gcd(r, n) == 1
     let r;
     do {
       r = randomBigInt(this.n.toString(2).length);
-    } while (r >= this.n || r === 0n);
+    } while (r >= this.n || r === 0n || gcdExtended(r, this.n)[0] !== 1n);
 
     // Compute ciphertext: c = g^m * r^n mod n^2
-    const gm = modPow(this.g, m, this.nSquared);
+    // optimized gm = (1 + m * n) mod n^2 since g = n + 1
+    const gm = (1n + (m * this.n)) % this.nSquared;
     const rn = modPow(r, this.n, this.nSquared);
     const ciphertext = (gm * rn) % this.nSquared;
 
@@ -231,14 +232,15 @@ class PaillierPublicKey {
   encrypt(plaintext) {
     const m = BigInt(plaintext);
     
-    // Generate random r where 0 < r < n
+    // Generate random r where 0 < r < n and gcd(r, n) == 1
     let r;
     do {
       r = randomBigInt(this.n.toString(2).length);
-    } while (r >= this.n || r === 0n);
+    } while (r >= this.n || r === 0n || gcdExtended(r, this.n)[0] !== 1n);
     
     // Compute ciphertext: c = g^m * r^n mod n^2
-    const gm = modPow(this.g, m, this.nSquared);
+    // optimized gm = (1 + m * n) mod n^2 since g = n + 1
+    const gm = (1n + (m * this.n)) % this.nSquared;
     const rn = modPow(r, this.n, this.nSquared);
     const ciphertext = (gm * rn) % this.nSquared;
     

@@ -43,3 +43,13 @@ export function verifyICMatch(ocrIC, storedICHash) {
   const ocrICHash = hashIC(ocrIC);
   return ocrICHash.toLowerCase() === storedICHash.toLowerCase();
 }
+
+/**
+ * Hash generic string using keccak256 (matches Solidity)
+ * @param {string} text - string to hash
+ * @returns {string} - Hex string of the hash
+ */
+export function hashString(text) {
+  const web3 = new Web3();
+  return web3.utils.soliditySha3({ type: 'string', value: text });
+}
