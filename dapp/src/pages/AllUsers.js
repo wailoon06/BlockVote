@@ -79,8 +79,8 @@ export default function AllUsers() {
         const info = await deployedContract.methods.getVoterInfo(address).call();
         return {
           wallet: address,
-          name: info.name,
-          email: info.email,
+          name: sessionStorage.getItem('voter_name_' + address) || '[ZKP Hashed]',
+          email: sessionStorage.getItem('voter_email_' + address) || '[ZKP Hashed]',
           status: info.status,
           role: 'Voter',
           registeredAt: new Date(parseInt(info.registeredAt) * 1000),
@@ -128,12 +128,16 @@ export default function AllUsers() {
   };
 
   const filteredUsers = users.filter(user => {
-    const matchesSearch = 
-      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.wallet.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (user.party && user.party.toLowerCase().includes(searchTerm.toLowerCase()));
+    const safeName = user.name || '';
+    const safeEmail = user.email || '';
+    const safeWallet = user.wallet || '';
     
+    const matchesSearch = 
+      safeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      safeEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      safeWallet.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.party && user.party.toLowerCase().includes(searchTerm.toLowerCase()));
+
     const matchesStatus = filterStatus === 'ALL' || user.status === filterStatus;
     const matchesRole = filterRole === 'ALL' || user.role === filterRole;
     

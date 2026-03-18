@@ -65,36 +65,6 @@ export function performHomomorphicAddition(publicKeyN, encryptedVotes) {
 }
 
 /**
- * Aggregate votes by candidate index
- * Groups votes by candidate and computes encrypted sums per candidate
- * 
- * @param {string} publicKeyN - The public key modulus N
- * @param {Array<Object>} votes - Array of vote objects with {candidateIndex, ciphertext}
- * @returns {Object} - Object mapping candidateIndex to encrypted sum
- */
-export function aggregateVotesByCandidate(publicKeyN, votes) {
-  // Group votes by candidate index
-  const votesByCandidate = {};
-  
-  for (const vote of votes) {
-    const idx = vote.candidateIndex;
-    if (!votesByCandidate[idx]) {
-      votesByCandidate[idx] = [];
-    }
-    votesByCandidate[idx].push(vote.ciphertext);
-  }
-  
-  // Perform homomorphic addition for each candidate
-  const encryptedTotals = {};
-  
-  for (const [candidateIndex, ciphertexts] of Object.entries(votesByCandidate)) {
-    encryptedTotals[candidateIndex] = performHomomorphicAddition(publicKeyN, ciphertexts);
-  }
-  
-  return encryptedTotals;
-}
-
-/**
  * Create aggregation result object
  * 
  * @param {string} encryptedTotal - The encrypted total
@@ -112,6 +82,5 @@ export function createAggregationResult(encryptedTotal, voteCount) {
 
 export default {
   performHomomorphicAddition,
-  aggregateVotesByCandidate,
   createAggregationResult
 };

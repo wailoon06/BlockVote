@@ -64,65 +64,65 @@ function modInverse(a, m) {
  * @param {Array<{x: number, y: string, prime?: string}>} shares
  * @returns {BigInt} reconstructed secret (lambda)
  */
-export function reconstructSecret(shares) {
-  if (shares.length < 2) throw new Error('Need at least 2 shares to reconstruct');
+// export function reconstructSecret(shares) {
+//   if (shares.length < 2) throw new Error('Need at least 2 shares to reconstruct');
 
-  // Convert to BigInt pairs
-  const pts = shares.map(s => ({ x: BigInt(s.x), y: BigInt(s.y) }));
+//   // Convert to BigInt pairs
+//   const pts = shares.map(s => ({ x: BigInt(s.x), y: BigInt(s.y) }));
 
-  // --- Modular path (secure, preferred) ---
-  const primeStr = shares[0].prime;
-  if (primeStr) {
-    const p = BigInt(primeStr);
-    let secret = 0n;
+//   // --- Modular path (secure, preferred) ---
+//   const primeStr = shares[0].prime;
+//   if (primeStr) {
+//     const p = BigInt(primeStr);
+//     let secret = 0n;
 
-    for (let i = 0; i < pts.length; i++) {
-      let num = 1n;
-      let den = 1n;
+//     for (let i = 0; i < pts.length; i++) {
+//       let num = 1n;
+//       let den = 1n;
 
-      for (let j = 0; j < pts.length; j++) {
-        if (i === j) continue;
-        num = (num * ((0n - pts[j].x + p) % p)) % p;
-        den = (den * ((pts[i].x - pts[j].x + p) % p)) % p;
-      }
+//       for (let j = 0; j < pts.length; j++) {
+//         if (i === j) continue;
+//         num = (num * ((0n - pts[j].x + p) % p)) % p;
+//         den = (den * ((pts[i].x - pts[j].x + p) % p)) % p;
+//       }
 
-      const lagrange = (num * modInverse(den, p)) % p;
-      secret = (secret + pts[i].y * lagrange) % p;
-    }
+//       const lagrange = (num * modInverse(den, p)) % p;
+//       secret = (secret + pts[i].y * lagrange) % p;
+//     }
 
-    return secret;
-  }
+//     return secret;
+//   }
 
-  // --- Legacy rational path (kept for backward compatibility) ---
-  // Lagrange interpolation at x = 0 over rationals, accumulated as fractions
-  // f(0) = Σ_i  y_i * Π_{j≠i} (0 - x_j) / (x_i - x_j)
-  let numeratorAcc = 0n;
-  let denominatorAcc = 1n;
+//   // --- Legacy rational path (kept for backward compatibility) ---
+//   // Lagrange interpolation at x = 0 over rationals, accumulated as fractions
+//   // f(0) = Σ_i  y_i * Π_{j≠i} (0 - x_j) / (x_i - x_j)
+//   let numeratorAcc = 0n;
+//   let denominatorAcc = 1n;
 
-  for (let i = 0; i < pts.length; i++) {
-    let num = pts[i].y;   // y_i
-    let den = 1n;
+//   for (let i = 0; i < pts.length; i++) {
+//     let num = pts[i].y;   // y_i
+//     let den = 1n;
 
-    for (let j = 0; j < pts.length; j++) {
-      if (i === j) continue;
-      num *= (0n - pts[j].x);   // × (-x_j)
-      den *= (pts[i].x - pts[j].x); // × (x_i - x_j)
-    }
+//     for (let j = 0; j < pts.length; j++) {
+//       if (i === j) continue;
+//       num *= (0n - pts[j].x);   // × (-x_j)
+//       den *= (pts[i].x - pts[j].x); // × (x_i - x_j)
+//     }
 
-    // Accumulate: acc = acc + num/den
-    // Using cross-multiplication: (a/b) + (c/d) = (a*d + c*b) / (b*d)
-    numeratorAcc = numeratorAcc * den + num * denominatorAcc;
-    denominatorAcc = denominatorAcc * den;
-  }
+//     // Accumulate: acc = acc + num/den
+//     // Using cross-multiplication: (a/b) + (c/d) = (a*d + c*b) / (b*d)
+//     numeratorAcc = numeratorAcc * den + num * denominatorAcc;
+//     denominatorAcc = denominatorAcc * den;
+//   }
 
-  // The secret is the integer result of numeratorAcc / denominatorAcc
-  if (denominatorAcc === 0n) throw new Error('Degenerate shares: denominator is zero');
-  if (numeratorAcc % denominatorAcc !== 0n) {
-    throw new Error('Share reconstruction yielded non-integer result – shares may be corrupt');
-  }
+//   // The secret is the integer result of numeratorAcc / denominatorAcc
+//   if (denominatorAcc === 0n) throw new Error('Degenerate shares: denominator is zero');
+//   if (numeratorAcc % denominatorAcc !== 0n) {
+//     throw new Error('Share reconstruction yielded non-integer result – shares may be corrupt');
+//   }
 
-  return numeratorAcc / denominatorAcc;
-}
+//   return numeratorAcc / denominatorAcc;
+// }
 
 // ---------------------------------------------------------------------------
 // Paillier Decryption
@@ -517,5 +517,5 @@ export async function verifyDecryptionProof(cHex, vHex, V_iHex, pd_iHex, eStr, z
   }
 }
 
-export default { reconstructSecret, paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY, modPow, computeTrusteePartialDecryption, combinePartialDecryptions, generateDecryptionProof, verifyDecryptionProof };
+export default { paillierDecrypt, thresholdDecrypt, extractVoteCounts, decryptShareY, modPow, computeTrusteePartialDecryption, combinePartialDecryptions, generateDecryptionProof, verifyDecryptionProof };
 

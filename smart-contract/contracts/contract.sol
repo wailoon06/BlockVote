@@ -79,8 +79,8 @@ contract Contract {
     // Trustee Management
     address[] public trusteeAddresses;
     mapping(address => Trustee) public trustees;
-    uint256 public threshold;  // Minimum trustees needed for decryption
-    uint256 public numTrustees;  // Total number of trustees
+    uint256 public immutable threshold;  // Minimum trustees needed for decryption
+    uint256 public immutable numTrustees;  // Total number of trustees
     
     event PaillierPublicKeySet(string publicKeyN, uint256 timestamp);
     event TrusteeRegistered(address indexed trusteeAddress, uint256 timestamp);
@@ -101,9 +101,9 @@ contract Contract {
 
     struct Candidate {
         address wallet;
-        bytes32 nameHash;
+        string name;
         bytes32 icHash;
-        bytes32 emailHash;
+        string email;
         string party;
         string manifesto;
         uint8 status;       // 0=PENDING_VERIFICATION, 1=VERIFIED
@@ -158,7 +158,7 @@ contract Contract {
     );
 
     // ===== STATE VARIABLES =====
-    address public admin;
+    address public immutable admin;
     address[] private voterAddresses;
     address[] private candidateAddresses;
     address[] private organizerList;
@@ -339,7 +339,7 @@ contract Contract {
         uint256 voteCount = zkpVoteNullifiers[_electionId].length;
         if (voteCount == 0) revert NoVotesCast();
 
-        bytes memory packed;
+        bytes memory packed = "";
         for (uint256 i = 0; i < voteCount; i++) {
             bytes32 nullifier = zkpVoteNullifiers[_electionId][i];
             packed = abi.encodePacked(packed, zkpVotes[_electionId][nullifier]);
@@ -369,8 +369,8 @@ contract Contract {
     
     event CandidateRegistered(
         address indexed wallet,
-        bytes32 nameHash,
-        bytes32 emailHash,
+        string name,
+        string email,
         uint256 timestamp
     );
 
@@ -557,60 +557,24 @@ contract Contract {
             voter.verifiedAt
         );
     }
-
-    // function getVotersBatch(uint256 _start, uint256 _count) public view returns (
-    //     address[] memory wallets,
-    //     string[] memory names,
-    //     string[] memory emails,
-    //     string[] memory statuses,
-    //     uint256[] memory registeredAts
-    // ) {
-    //     require(_start < voterAddresses.length, "!start");
-        
-    //     uint256 end = _start + _count;
-    //     if (end > voterAddresses.length) {
-    //         end = voterAddresses.length;
-    //     }
-        
-    //     uint256 resultCount = end - _start;
-        
-    //     wallets = new address[](resultCount);
-    //     names = new string[](resultCount);
-    //     emails = new string[](resultCount);
-    //     statuses = new string[](resultCount);
-    //     registeredAts = new uint256[](resultCount);
-        
-    //     for (uint256 i = 0; i < resultCount; i++) {
-    //         address voterAddress = voterAddresses[_start + i];
-    //         Voter memory voter = voters[voterAddress];
-            
-    //         wallets[i] = voter.wallet;
-    //         names[i] = voter.name;
-    //         emails[i] = voter.email;
-    //         statuses[i] = voter.status;
-    //         registeredAts[i] = voter.registeredAt;
-    //     }
-        
-    //     return (wallets, names, emails, statuses, registeredAts);
-    // }
-
     
     function registerCandidate(
-        bytes32 _nameHash,
+        string calldata _name,
         bytes32 _icHash,
-        bytes32 _emailHash,
+        string calldata _email,
         string calldata _party,
         string calldata _manifesto
     ) external returns (bytes32) {
         if (candidates[msg.sender].isRegistered) revert AlreadyRegistered();
-        
+
+        bytes32 _emailHash = keccak256(abi.encodePacked(_email));
         if (usedICs[_icHash]) revert ICAlreadyUsed();
         if (usedEmails[_emailHash]) revert EmailAlreadyUsed();
-        
+
         bytes32 verificationCode = keccak256(
             abi.encodePacked(
                 msg.sender,
-                _nameHash,
+                _name,
                 _icHash,
                 _emailHash,
                 block.timestamp
@@ -618,9 +582,9 @@ contract Contract {
         );
         candidates[msg.sender] = Candidate({
             wallet: msg.sender,
-            nameHash: _nameHash,
+            name: _name,
             icHash: _icHash,
-            emailHash: _emailHash,
+            email: _email,
             party: _party,
             manifesto: _manifesto,
             status: 0,
@@ -633,7 +597,7 @@ contract Contract {
         usedICs[_icHash] = true;
         usedEmails[_emailHash] = true;
         
-        emit CandidateRegistered(msg.sender, _nameHash, _emailHash, block.timestamp);
+        emit CandidateRegistered(msg.sender, _name, _email, block.timestamp);
         
         return verificationCode;
     }
@@ -663,8 +627,8 @@ contract Contract {
     }
     
     function getCandidateInfo(address _wallet) external view returns (
-        bytes32 nameHash,
-        bytes32 emailHash,
+        string memory name,
+        string memory email,
         string memory party,
         string memory manifesto,
         string memory status,
@@ -672,11 +636,11 @@ contract Contract {
         uint256 verifiedAt
     ) {
         if (!candidates[_wallet].isRegistered) revert NotRegistered();
-        
+
         Candidate memory candidate = candidates[_wallet];
         return (
-            candidate.nameHash,
-            candidate.emailHash,
+            candidate.name,
+            candidate.email,
             candidate.party,
             candidate.manifesto,
             candidate.status == 1 ? "VERIFIED" : "PENDING_VERIFICATION",
@@ -864,14 +828,15 @@ contract Contract {
     
     function getElectionsByOrganizer(address _organizer) external view returns (uint256[] memory) {
         uint256 count = 0;
-        for (uint256 i = 0; i < electionIds.length; i++) {
+        uint256 len = electionIds.length;
+        for (uint256 i = 0; i < len; i++) {
             if (elections[electionIds[i]].organizer == _organizer) {
                 count++;
             }
         }
         uint256[] memory organizerElections = new uint256[](count);
         uint256 currentIndex = 0;
-        for (uint256 i = 0; i < electionIds.length; i++) {
+        for (uint256 i = 0; i < len; i++) {
             if (elections[electionIds[i]].organizer == _organizer) {
                 organizerElections[currentIndex] = electionIds[i];
                 currentIndex++;
@@ -1142,7 +1107,7 @@ contract Contract {
         uint256 submittedCount = partialDecryptionSubmitters[_electionId].length;
         if (submittedCount < threshold) revert ThresholdNotMet();
 
-        bytes memory packed;
+        bytes memory packed ="";
         for (uint256 i = 0; i < submittedCount; i++) {
             address trusteeAddr = partialDecryptionSubmitters[_electionId][i];
             packed = abi.encodePacked(packed, partialDecryptions[_electionId][trusteeAddr]);

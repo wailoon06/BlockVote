@@ -147,12 +147,11 @@ num_shares = ${numShares}
 
 shares = shamir.split_secret(secret, threshold, num_shares)
 
-# Convert to JSON (include the prime so trustees can do modular reconstruction)
+# Convert to JSON
 result = {
     'shares': [{'x': x, 'y': str(y), 'v_i': str(pow(v, y, n_sq))} for x, y in shares],
     'threshold': threshold,
     'num_shares': num_shares,
-    'prime': str(shamir.prime),
     'v': str(v)
 }
 
@@ -171,9 +170,8 @@ print(json.dumps(result))
         for (let i = 0; i < result.shares.length; i++) {
             console.log(`   Share ${i + 1}: (x=${result.shares[i].x}, y=${result.shares[i].y.substring(0, 30)}...)`);
         }
-        console.log(`   Prime field: RFC 3526 Group 14 (2048-bit)`);
 
-        return { shares: result.shares, prime: result.prime, v: result.v };
+        return { shares: result.shares, v: result.v };
     } catch (error) {
         if (fs.existsSync(tempSplitScript)) {
             fs.unlinkSync(tempSplitScript);
@@ -182,7 +180,7 @@ print(json.dumps(result))
     }
 }
 
-async function distributeShares(shares, prime, v_generator, trusteeAddresses, contract) {
+async function distributeShares(shares, v_generator, trusteeAddresses, contract) {
     console.log('\n📤 Step 5: Distributing Shares to Trustees...');
     console.log('🔐 Each trustee share will be encrypted with AES-256-GCM using a passphrase.');
     console.log('   Keep each passphrase safe — it is required to decrypt the share during vote counting.\n');
@@ -231,13 +229,12 @@ async function distributeShares(shares, prime, v_generator, trusteeAddresses, co
             x:               share.x,
             encrypted_y,
             v_i:             share.v_i,  // Public Verification Share
-            prime,                     // RFC 3526 Group 14 prime for modular reconstruction
-              v: v_generator,            // Public Verification Generator
-              distributed_at:  new Date().toISOString(),
-              warning: '⚠️ KEEP THIS FILE SECURE! This share is required for vote decryption. The y value is AES-256-GCM encrypted — your passphrase is needed to decrypt it.'
-          };
+            v: v_generator,            // Public Verification Generator
+            distributed_at:  new Date().toISOString(),
+            warning: '⚠️ KEEP THIS FILE SECURE! This share is required for vote decryption. The y value is AES-256-GCM encrypted — your passphrase is needed to decrypt it.'
+        };
 
-          const shareFilePath = path.join(sharesDir, `trustee_${i + 1}.json`);
+        const shareFilePath = path.join(sharesDir, `trustee_${i + 1}.json`);
           fs.writeFileSync(shareFilePath, JSON.stringify(shareData, null, 2));
 
         console.log(`   ✅ Share encrypted and saved to: ${shareFilePath}`);
@@ -247,7 +244,7 @@ async function distributeShares(shares, prime, v_generator, trusteeAddresses, co
     // Save global verification shares to React app for combiner reference
     const verificationData = {
         v: v_generator,
-        prime,
+
         shares: shares.map((s, idx) => ({
             trustee: trusteeAddresses[idx],
             share_index: s.x,
@@ -374,7 +371,7 @@ async function main() {
         await uploadPublicKeyToBlockchain(contract, keyData.public_key_n, adminAccount);
         
         // Step 4: Split Private Key
-        const { shares, prime, v } = await splitPrivateKey(
+        const { shares, v } = await splitPrivateKey(
             keyData.private_key_lambda,
             keyData.private_key_mu,
             keyData.public_key_n,
@@ -383,7 +380,7 @@ async function main() {
         );
 
         // Step 5: Distribute Shares
-        const commitments = await distributeShares(shares, prime, v, trusteeAddresses, contract);
+        const commitments = await distributeShares(shares, v, trusteeAddresses, contract);
         
         // Step 5b: Submit commitments to blockchain (admin submits on behalf of trustees)
         await submitShareCommitments(contract, trusteeAddresses, commitments, adminAccount);

@@ -286,9 +286,10 @@ export default function TrusteeDashboard() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <Navbar walletAddress={walletAddress} userRole="trustee" onLogout={handleLogout} />
       <Sidebar userRole="trustee" />
-      <MessageAlert message={message} type={messageType} />
-
+      
       <div style={{ marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1200px' }}>
+        <MessageAlert message={message} type={messageType} />
+        
         <div style={{ marginBottom: '32px' }}>
           <h1 style={{ color: '#1e293b', fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>
             🔑 Trustee Dashboard

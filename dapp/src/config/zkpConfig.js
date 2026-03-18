@@ -32,7 +32,7 @@ export const ZKP_CONFIG = {
 
   // ── Verifier contract (Groth16Verifier from Verifier.sol) ─────────────────
   verifier: {
-    address: '0xd5A32cDbB67786fE4209E5276043bcBf61aD9368',
+    address: '0x54404652753c28F41319D8BB637fD652Ddb20bDc',
     network: 'development',
     bytecodeHash: null
   },
@@ -44,6 +44,14 @@ export const ZKP_CONFIG = {
     verifyContractBytecode: false
   }
 };
+
+
+
+
+
+
+
+
 
 
 

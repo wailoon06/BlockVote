@@ -89,12 +89,10 @@ export default function CandidateRegister() {
 
       const { deployedContract } = await getDeployedContract();
 
-      const nameHash = hashString(formData.name);
-      const emailHash = hashString(formData.email);
       const icHash = hashIC(formData.ic);
 
       const result = await deployedContract.methods
-        .registerCandidate(nameHash, icHash, emailHash, formData.party, formData.manifesto)
+        .registerCandidate(formData.name, icHash, formData.email, formData.party, formData.manifesto)
         .send({ from: walletAddress });
 
       setMessage('Registration successful! Redirecting to verification...');
