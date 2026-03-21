@@ -125,6 +125,17 @@ export default function ElectionResults() {
       // Sort by votes (descending)
       candidateData.sort((a, b) => b.votes - a.votes);
 
+      // Competition ranking with ties: 1, 1, 3 (not 1, 1, 2)
+      let previousVotes = null;
+      let currentRank = 0;
+      candidateData.forEach((candidate, index) => {
+        if (previousVotes === null || candidate.votes < previousVotes) {
+          currentRank = index + 1;
+          previousVotes = candidate.votes;
+        }
+        candidate.rank = currentRank;
+      });
+
       setCandidates(candidateData);
     } catch (error) {
       console.error('Error loading election results:', error);
@@ -600,23 +611,23 @@ export default function ElectionResults() {
                       key={candidate.address}
                       style={{
                         padding: '28px',
-                        backgroundColor: index === 0 && getElectionStatus() === 'Completed' 
+                        backgroundColor: candidate.rank === 1 && getElectionStatus() === 'Completed' 
                           ? '#fffbeb' 
                           : '#f8fafc',
                         borderRadius: '16px',
-                        border: index === 0 && getElectionStatus() === 'Completed' 
+                        border: candidate.rank === 1 && getElectionStatus() === 'Completed' 
                           ? '2px solid #fbbf24' 
                           : '2px solid #e2e8f0',
                         transition: 'all 0.2s'
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = index === 0 && getElectionStatus() === 'Completed' 
+                        e.currentTarget.style.borderColor = candidate.rank === 1 && getElectionStatus() === 'Completed' 
                           ? '#f59e0b' 
                           : '#cbd5e1';
                         e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.1)';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = index === 0 && getElectionStatus() === 'Completed' 
+                        e.currentTarget.style.borderColor = candidate.rank === 1 && getElectionStatus() === 'Completed' 
                           ? '#fbbf24' 
                           : '#e2e8f0';
                         e.currentTarget.style.boxShadow = 'none';
@@ -647,17 +658,17 @@ export default function ElectionResults() {
                               padding: '8px 16px',
                               borderRadius: '10px',
                               minWidth: '52px',
-                              background: index === 0 
+                              background: candidate.rank === 1 
                                 ? 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)' 
-                                : index === 1
+                                : candidate.rank === 2
                                 ? 'linear-gradient(135deg, #94a3b8 0%, #64748b 100%)'
-                                : index === 2
+                                : candidate.rank === 3
                                 ? 'linear-gradient(135deg, #c2410c 0%, #9a3412 100%)'
                                 : '#64748b',
                               color: 'white',
                               boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
                             }}>
-                              #{index + 1}
+                              #{candidate.rank}
                             </span>
                             <h3 style={{ 
                               margin: 0, 
@@ -728,7 +739,7 @@ export default function ElectionResults() {
                           <span style={{
                             fontSize: '20px',
                             fontWeight: '800',
-                            color: index === 0 ? '#16a34a' : '#64748b'
+                            color: candidate.rank === 1 ? '#16a34a' : '#64748b'
                           }}>
                             {phase4Result ? `${candidate.percentage}%` : '— %'}
                           </span>
@@ -745,9 +756,9 @@ export default function ElectionResults() {
                           <div style={{
                             width: phase4Result ? `${candidate.percentage}%` : '0%',
                             height: '100%',
-                            background: index === 0 
+                            background: candidate.rank === 1 
                               ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)' 
-                              : index === 1 
+                              : candidate.rank === 2 
                               ? 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)'
                               : 'linear-gradient(90deg, #64748b 0%, #475569 100%)',
                             transition: 'width 1s ease-out',

@@ -288,7 +288,9 @@ export default function TrusteeDashboard() {
       <Sidebar userRole="trustee" />
       
       <div style={{ marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1200px' }}>
-        <MessageAlert message={message} type={messageType} />
+        <div style={{ marginTop: '12px' }}>
+          <MessageAlert message={message} type={messageType} />
+        </div>
         
         <div style={{ marginBottom: '32px' }}>
           <h1 style={{ color: '#1e293b', fontSize: '32px', fontWeight: '700', marginBottom: '8px' }}>

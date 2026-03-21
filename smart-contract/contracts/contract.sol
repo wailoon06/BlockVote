@@ -177,7 +177,6 @@ contract Contract {
     // Election-scoped candidacy (Phase 3 & 4)
     mapping(uint256 => address[]) private electionCandidateApplicants;
     mapping(uint256 => mapping(address => uint8)) public candidateApplicationStatus;
-    // candidateVotes removed - using encrypted voting instead
     
     // ===== ZKP VOTING =====
     IVoteVerifier public voteVerifier;
@@ -1133,7 +1132,7 @@ contract Contract {
         return (
             elections[_electionId].decryptedResult,
             elections[_electionId].resultsPublished,
-            0
+            partialDecryptionSubmitters[_electionId].length
         );
     }
     
