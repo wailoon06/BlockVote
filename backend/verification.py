@@ -57,6 +57,10 @@ def validate_ic(ic_number):
     except ValueError:
         return False
 
+@app.route("/")
+def home():
+    return "API is running"
+
 @app.route('/verify', methods=['POST'])
 def verify():
     if 'front' not in request.files or 'back' not in request.files or 'selfie_image' not in request.files:
@@ -144,6 +148,7 @@ def verify():
             }), 500
     
 if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=5000, debug=True) 
 
         
