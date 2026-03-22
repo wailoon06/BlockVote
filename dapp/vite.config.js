@@ -45,7 +45,7 @@ export default defineConfig({
     open: true
   },
   build: {
-    outDir: 'build',
+    outDir: 'dst',
     sourcemap: true
   }
 })
