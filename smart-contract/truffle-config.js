@@ -41,10 +41,17 @@
  * https://trufflesuite.com/docs/truffle/getting-started/using-the-truffle-dashboard/
  */
 
-// require('dotenv').config();
+require('dotenv').config();
 // const { MNEMONIC, PROJECT_ID } = process.env;
 
-// const HDWalletProvider = require('@truffle/hdwallet-provider');
+const HDWalletProvider = require('@truffle/hdwallet-provider');
+
+const AMOY_RPC_URL = process.env.AMOY_RPC_URL || 'https://rpc-amoy.polygon.technology/';
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+
+if (!PRIVATE_KEY) {
+  console.warn('[truffle-config] PRIVATE_KEY is not set. `truffle migrate --network amoy` will fail until it is provided.');
+}
 
 module.exports = {
   /**
@@ -64,10 +71,22 @@ module.exports = {
     // tab if you use this network and you must also set the `host`, `port` and `network_id`
     // options below to some value.
     //
-    development: {
-     host: "127.0.0.1",     // Localhost (default: none)
-     port: 7545,            // Standard Ethereum port (default: none)
-     network_id: "*",     // Match any network id
+    // development: {
+    //  host: "127.0.0.1",     // Localhost (default: none)
+    //  port: 7545,            // Standard Ethereum port (default: none)
+    //  network_id: "*",     // Match any network id
+    // },
+    amoy: {
+      provider: () => new HDWalletProvider({
+        privateKeys: [PRIVATE_KEY],
+        providerOrUrl: AMOY_RPC_URL,
+        pollingInterval: 12000
+      }),
+      network_id: 80002,
+      confirmations: 1,         // Fewer confirmations helps flaky public RPCs
+      timeoutBlocks: 500,       // Give public RPC more time to mine/confirm
+      networkCheckTimeout: 120000,
+      skipDryRun: true          // Skip dry run before migrations
     },
     //
     // An additional network, but with some advanced options…

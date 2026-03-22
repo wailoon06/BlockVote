@@ -33,8 +33,7 @@
         }
       ],
       "stateMutability": "view",
-      "type": "function",
-      "constant": true
+      "type": "function"
     }
   ],
   "metadata": "{\"compiler\":{\"version\":\"0.8.19+commit.7dd6d404\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[{\"internalType\":\"uint256[2]\",\"name\":\"_pA\",\"type\":\"uint256[2]\"},{\"internalType\":\"uint256[2][2]\",\"name\":\"_pB\",\"type\":\"uint256[2][2]\"},{\"internalType\":\"uint256[2]\",\"name\":\"_pC\",\"type\":\"uint256[2]\"},{\"internalType\":\"uint256[10]\",\"name\":\"_pubSignals\",\"type\":\"uint256[10]\"}],\"name\":\"verifyProof\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"project:/contracts/Verifier.sol\":\"Groth16Verifier\"},\"evmVersion\":\"paris\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":200},\"remappings\":[],\"viaIR\":true},\"sources\":{\"project:/contracts/Verifier.sol\":{\"keccak256\":\"0xd543abd68805eb853986a5fd937ddc0c4c544e4c8575e656b2eb1aca69bd8ae3\",\"license\":\"GPL-3.0\",\"urls\":[\"bzz-raw://1d16d759d4522433d5117762313f09d84e60a06ba3acb7546a3897afcced3a87\",\"dweb:/ipfs/QmY9BrGigX4yNCRNP6NnmTXnAy5KQSdFuy5kaAUMr29ea1\"]}},\"version\":1}",
@@ -6265,8 +6264,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2026-03-21T11:48:35.206Z",
-  "networkType": "ethereum",
+  "updatedAt": "2026-03-21T15:41:50.608Z",
   "devdoc": {
     "kind": "dev",
     "methods": {},
