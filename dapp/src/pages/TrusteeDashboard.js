@@ -287,7 +287,7 @@ export default function TrusteeDashboard() {
       <Navbar walletAddress={walletAddress} userRole="trustee" onLogout={handleLogout} />
       <Sidebar userRole="trustee" />
       
-      <div style={{ marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1200px' }}>
+      <div style={{ marginLeft: '70px', padding: 'calc(70px + 40px) 30px 40px 30px', maxWidth: '1200px' }}>
         <div style={{ marginTop: '12px' }}>
           <MessageAlert message={message} type={messageType} />
         </div>

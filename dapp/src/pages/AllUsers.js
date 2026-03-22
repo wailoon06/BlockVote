@@ -172,7 +172,7 @@ export default function AllUsers() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa' }}>
       <Navbar walletAddress={walletAddress} onLogout={handleLogout} userRole="admin" />
       
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '3rem 1.5rem', paddingTop: 'calc(70px + 3rem)' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: 'calc(70px + 3rem) 1.5rem 3rem 1.5rem' }}>
         {/* Header */}
         <div style={{ marginBottom: '3rem' }}>
           <div

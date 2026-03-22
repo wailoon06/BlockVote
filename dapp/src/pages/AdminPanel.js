@@ -176,7 +176,7 @@ export default function AdminPanel() {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa' }}>
         <Navbar walletAddress={walletAddress} onLogout={handleLogout} userRole="admin" />
-        <div style={{ maxWidth: '700px', margin: '0 auto', padding: '3rem 1.5rem', paddingTop: 'calc(70px + 3rem)', textAlign: 'center' }}>
+        <div style={{ maxWidth: '700px', margin: '0 auto', padding: 'calc(70px + 3rem) 1.5rem 3rem 1.5rem', textAlign: 'center' }}>
           <MessageAlert message={message} type={messageType} onClose={() => setMessage('')} />
           <div style={{ fontSize: '4rem', marginBottom: '1rem' }}></div>
           <h2 style={{ color: '#1e3a5f', marginBottom: '1rem' }}>Access Denied</h2>
@@ -190,7 +190,7 @@ export default function AdminPanel() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa' }}>
       <Navbar walletAddress={walletAddress} onLogout={handleLogout} userRole="admin" />
       
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '3rem 1.5rem', paddingTop: 'calc(70px + 3rem)' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: 'calc(70px + 3rem) 1.5rem 3rem 1.5rem' }}>
         {/* Header */}
         <div style={{ marginBottom: '3rem' }}>
           <div

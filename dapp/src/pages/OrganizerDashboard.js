@@ -313,7 +313,7 @@ function OrganizerDashboard() {
       <Sidebar userRole="organizer" />
       <MessageAlert message={message.text} type={message.type} />
 
-      <div style={{ margin: '0', marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1600px' }}>
+      <div style={{ margin: '0', marginLeft: '70px', padding: 'calc(70px + 40px) 30px 40px 30px', maxWidth: '1600px' }}>
         {/* Header Section */}
         <div style={{ marginBottom: '40px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>

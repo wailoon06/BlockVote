@@ -157,7 +157,7 @@ export default function OrganizerRegister() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f5f7fa' }}>
       <Navbar walletAddress={walletAddress} onLogout={() => navigate('/')} />
       
-      <div style={{ maxWidth: '700px', margin: '0 auto', padding: '3rem 1.5rem', paddingTop: 'calc(70px + 3rem)' }}>
+      <div style={{ maxWidth: '700px', margin: '0 auto', padding: 'calc(70px + 3rem) 1.5rem 3rem 1.5rem' }}>
         <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
           <h1 style={{ 
             fontSize: '2.5rem', 

@@ -325,7 +325,7 @@ export default function CandidateVerify() {
         onLogout={logout} 
       />
 
-      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '0 2rem', paddingTop: 'calc(70px + 3rem)', paddingBottom: '3rem' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', padding: 'calc(70px + 3rem) 2rem 3rem 2rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '2rem' }}>
           {/* Left Column - User Info */}
           <div>

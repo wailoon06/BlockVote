@@ -152,6 +152,8 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error checking registration status:', error);
+      setMessage(error.message || 'Error checking registration status. Ensure MetaMask is on the correct network (Localhost 7545) and the contract is deployed.');
+      setMessageType('danger');
     }
   };
 

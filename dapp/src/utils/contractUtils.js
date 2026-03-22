@@ -33,6 +33,11 @@ export const getDeployedContract = async () => {
     throw new Error(`Contract not deployed! Chain ID: ${chainId}, Network ID: ${networkId}. Make sure Ganache is running and contract is deployed.`);
   }
 
+  const code = await web3.eth.getCode(deployedNetwork.address);
+  if (code === '0x' || code === '0x0') {
+    throw new Error(`No contract found at address ${deployedNetwork.address}. This usually means MetaMask is connected to the wrong network (e.g., wrong port like 8545 instead of 7545), or you need to deploy the contract on the currently connected network.`);
+  }
+
   const deployedContract = new web3.eth.Contract(
     contract.abi,
     deployedNetwork.address

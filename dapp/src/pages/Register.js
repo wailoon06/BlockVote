@@ -150,7 +150,7 @@ export default function Register() {
         onLogout={logout} 
       />
 
-      <div style={{ maxWidth: '600px', margin: '0 auto', padding: '0 1.5rem', paddingTop: 'calc(70px + 4rem)' }}>
+      <div style={{ maxWidth: '600px', margin: '0 auto', padding: 'calc(70px + 4rem) 1.5rem 0 1.5rem' }}>
         <div style={{
           backgroundColor: 'white',
           borderRadius: '0.75rem',
