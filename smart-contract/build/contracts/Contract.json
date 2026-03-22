@@ -46872,12 +46872,12 @@
         }
       },
       "links": {},
-      "address": "0xFE069D7085feBdDc22610AC569c392397EC1713B",
-      "transactionHash": "0x34a7d9b132526d776c9cd71e12587cd2ffc8c797bba1f7f46f6fdcbc184e712f"
+      "address": "0xE67fB0825747eB52dB2ae8Ac766359a5C6D2211B",
+      "transactionHash": "0xa69c6b681c1985ea11d9490f0c74090019de683fb1fccd0ac05c828833fc295a"
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2026-03-21T11:48:35.222Z",
+  "updatedAt": "2026-03-22T07:19:02.806Z",
   "networkType": "ethereum",
   "devdoc": {
     "kind": "dev",
