@@ -1,7 +1,11 @@
-const fs = require('fs');
-const path = require('path');
-const FormData = require('form-data');
-const axios = require('axios');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import FormData from 'form-data';
+import axios from 'axios';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class IPFSManager {
     constructor(ipfsApiUrl = 'http://127.0.0.1:5001') {
@@ -232,4 +236,4 @@ class IPFSManager {
     }
 }
 
-module.exports = IPFSManager;
+export default IPFSManager;

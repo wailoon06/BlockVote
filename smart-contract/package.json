@@ -1,27 +1,27 @@
 {
   "name": "smart-contract",
   "version": "1.0.0",
-  "description": "",
-  "main": "truffle-config.js",
-  "directories": {
-    "test": "test"
-  },
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:amoy": "hardhat run scripts/deploy.ts --network amoy",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "export:frontend:amoy": "hardhat run scripts/export-frontend-artifacts.ts --network amoy",
+    "export:frontend:local": "hardhat run scripts/export-frontend-artifacts.ts --network localhost",
+    "phase1": "node phase1-setup.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "devDependencies": {
+    "hardhat": "^3.0.0",
+    "@nomicfoundation/hardhat-ethers": "^4.0.6",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.3",
+    "@types/node": "^22.19.15",
+    "ethers": "^6.16.0",
+    "forge-std": "github:foundry-rs/forge-std#v1.9.4",
+    "typescript": "~5.8.0",
+    "viem": "^2.47.6"
+  },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.9.5",
-    "@truffle/hdwallet-provider": "^2.1.15",
-    "axios": "^1.13.5",
-    "body-parser": "^2.2.0",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "form-data": "^4.0.5",
-    "truffle-contract": "^4.0.31",
-    "web3": "^4.16.0"
+    "dotenv": "^17.3.1"
   }
 }

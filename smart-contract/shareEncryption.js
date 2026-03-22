@@ -10,7 +10,7 @@
  *   - Encoding  : all byte fields are hex strings in the output JSON
  */
 
-const crypto = require('crypto');
+import crypto from 'node:crypto';
 
 const PBKDF2_ITERATIONS = 100_000;
 const PBKDF2_DIGEST     = 'sha256';
@@ -77,4 +77,4 @@ function decryptShareY(encrypted, passphrase) {
   }
 }
 
-module.exports = { encryptShareY, decryptShareY };
+export { encryptShareY, decryptShareY };

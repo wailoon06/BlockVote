@@ -1,0 +1,12 @@
+{
+  "network": "localhost",
+  "chainId": 80002,
+  "deployer": "0x7fd0de9f11134fc11b47d04408c307c417d5e7f7",
+  "mainContract": {
+    "address": "0x09b0921b71b06cd78f4372905e66940dabb32190"
+  },
+  "verifier": {
+    "address": "0x6104b132d95627ba421952c65b5edfb905055585"
+  },
+  "deployedAt": "2026-03-22T15:17:16.655Z"
+}
