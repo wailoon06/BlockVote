@@ -77,7 +77,7 @@ export default function Register() {
         throw new Error('Please connect your wallet first');
       }
 
-      const { deployedContract } = await getDeployedContract();
+      const { web3, deployedContract } = await getDeployedContract();
 
       const nameHash = hashString(formData.name);
       const emailHash = hashString(formData.email);
@@ -85,7 +85,11 @@ export default function Register() {
 
       const result = await deployedContract.methods
         .registerVoter(nameHash, icHash, emailHash)
-        .send({ from: walletAddress });
+        .send({ 
+          from: walletAddress,
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei')
+        });
 
       setMessage('Registration successful! Redirecting to verification...');
       setMessageType('success');

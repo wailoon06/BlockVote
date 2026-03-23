@@ -151,11 +151,15 @@ export default function CandidateElections() {
     setMessageType('info');
 
     try {
-      const { deployedContract } = await getDeployedContract();
+      const { web3, deployedContract } = await getDeployedContract();
       
       await deployedContract.methods
         .applyToElection(electionId)
-        .send({ from: walletAddress });
+        .send({ 
+          from: walletAddress,
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei')
+         });
 
       setMessage('Application submitted successfully!');
       setMessageType('success');

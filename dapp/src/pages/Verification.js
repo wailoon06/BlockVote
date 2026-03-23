@@ -213,10 +213,14 @@ export default function Verify() {
       setMessageType('info');
 
       // Step 5: Submit ZKP proof to contract — also stores Poseidon commitment on-chain
-      const { deployedContract: contract } = await getDeployedContract();
+      const { web3, deployedContract: contract } = await getDeployedContract();
       await contract.methods
         .verifyVoterWithZKP(pA, pB, pC, pubSignals)
-        .send({ from: walletAddress });
+        .send({ 
+          from: walletAddress,
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei') 
+        });
 
       setMessage('✅ Verification complete!');
       setMessageType('success');

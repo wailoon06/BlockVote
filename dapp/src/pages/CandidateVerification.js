@@ -158,7 +158,7 @@ export default function CandidateVerify() {
       icFormData.append('back', icBackPhoto);
       icFormData.append('selfie_image', selfiePhoto);
 
-      setMessage('📄 Step 1/5: Extracting and validating IC information...');
+      setMessage('Step 1/5: Extracting and validating IC information...');
       const icResponse = await fetch('http://localhost:5000/verify', {
         method: 'POST',
         body: icFormData
@@ -171,7 +171,7 @@ export default function CandidateVerify() {
       }
 
       // Step 2: Validate OCR IC matches stored IC hash on blockchain
-      setMessage('🔐 Step 2/5: Validating IC against blockchain records...');
+      setMessage('Step 2/5: Validating IC against blockchain records...');
       setMessageType('info');
 
       const { deployedContract } = await getDeployedContract();
@@ -189,7 +189,7 @@ export default function CandidateVerify() {
         throw new Error('IC mismatch: The IC number from your photo does not match the IC registered with your wallet. Please ensure you are using the correct IC card.');
       }
 
-      setMessage('✅ Step 3/5: IC validated! Generating age proof...');
+      setMessage('Step 3/5: IC validated! Generating age proof...');
       setMessageType('info');
 
       // Step 3: Retrieve or generate candidate secret (persisted in localStorage, encrypted with MetaMask key)
@@ -203,23 +203,26 @@ export default function CandidateVerify() {
       }
 
       // Step 4: Generate registration ZKP proof (VoteWithICAgeCheck, electionId=0)
-      setMessage('🔒 Step 4/5: Generating zero-knowledge proof (this may take 10-30 seconds)...');
+      setMessage('Step 4/5: Generating zero-knowledge proof (this may take 10-30 seconds)...');
 
       const { proof, publicSignals, pA, pB, pC, pubSignals } =
         await generateRegistrationProof(ocrIC, walletAddress, voterSecret);
 
       console.log('Registration proof generated:', { proof, publicSignals });
 
-      setMessage('🔐 Step 5/5: Please confirm the transaction in MetaMask to complete verification');
+      setMessage('Step 5/5: Please confirm the transaction in MetaMask to complete verification');
       setMessageType('info');
 
-      // Submit ZKP proof to contract
-      const { deployedContract: contract } = await getDeployedContract();
+      const { web3, deployedContract: contract } = await getDeployedContract();
       await contract.methods
         .verifyCandidateWithZKP(pA, pB, pC, pubSignals)
-        .send({ from: walletAddress });
+        .send({ 
+          from: walletAddress,
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei') 
+        });
 
-      setMessage('🎉 Verification Complete! Your candidate account has been successfully verified and recorded on the blockchain.');
+      setMessage('Verification Complete! Your candidate account has been successfully verified and recorded on the blockchain.');
       setMessageType('success');
       
       setTimeout(() => {

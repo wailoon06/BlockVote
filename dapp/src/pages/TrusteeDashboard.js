@@ -115,7 +115,7 @@ export default function TrusteeDashboard() {
           const json = JSON.parse(event.target.result);
           
           if (json.share_index !== trusteeIndex) {
-            setMessage(`âŒ Invalid share file! This account is Trustee #${trusteeIndex}, but you uploaded the file for Trustee #${json.share_index}.`);
+            setMessage(`Invalid share file! This account is Trustee #${trusteeIndex}, but you uploaded the file for Trustee #${json.share_index}.`);
             setMessageType('danger');
             setShareFiles(prev => { const newFiles = {...prev}; delete newFiles[electionId]; return newFiles; });
             return;
@@ -151,14 +151,14 @@ export default function TrusteeDashboard() {
 
     try {
         const s_i = await decryptShareY(shareData.encrypted_y, passphrase);
-        const { deployedContract } = await getDeployedContract();
+        const { web3, deployedContract } = await getDeployedContract();
         const pubKeyN = await deployedContract.methods.getPaillierPublicKey().call();
 
         let tallyPayload;
         try { tallyPayload = JSON.parse(election.encryptedTally); } catch { tallyPayload = { encrypted_total: election.encryptedTally }; }
 
           // --- Failsafe: Verify the Organizer's Encrypted Tally ---
-          setMessage('Verifying ZKP proofs and homomorphic tallies. This protects against a malicious organizer...');
+          setMessage('Verifying ZKP proofs and homomorphic tallies.');
           
           try {
               const nullifiers = await deployedContract.methods.getZKPVoteNullifiers(election.id).call();
@@ -239,7 +239,9 @@ export default function TrusteeDashboard() {
 
           await deployedContract.methods.submitPartialDecryption(election.id, finalSubmitPayload).send({
             from: walletAddress,
-            gas: 3000000
+            gas: 3000000,
+            maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), 
+          maxFeePerGas: web3.utils.toWei('45', 'gwei')
         });
 
         setMessage('Partial decryption submitted successfully! The organizer will now be able to tally the results.');
@@ -287,7 +289,7 @@ export default function TrusteeDashboard() {
       <Navbar walletAddress={walletAddress} userRole="trustee" onLogout={handleLogout} />
       <Sidebar userRole="trustee" />
       
-      <div style={{ marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1200px' }}>
+      <div style={{ margin: '0', marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 60px)', maxWidth: '1200px' }}>
         <div style={{ marginTop: '12px' }}>
           <MessageAlert message={message} type={messageType} />
         </div>

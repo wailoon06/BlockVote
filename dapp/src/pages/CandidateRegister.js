@@ -87,13 +87,17 @@ export default function CandidateRegister() {
         throw new Error('Please connect your wallet first');
       }
 
-      const { deployedContract } = await getDeployedContract();
+      const { web3, deployedContract } = await getDeployedContract();
 
       const icHash = hashIC(formData.ic);
 
       const result = await deployedContract.methods
         .registerCandidate(formData.name, icHash, formData.email, formData.party, formData.manifesto)
-        .send({ from: walletAddress });
+        .send({ 
+          from: walletAddress,
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei')
+         });
 
       setMessage('Registration successful! Redirecting to verification...');
       setMessageType('success');

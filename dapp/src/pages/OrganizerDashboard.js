@@ -27,6 +27,8 @@ function OrganizerDashboard() {
     startDateTime: '',
     endDateTime: ''
   });
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isCreatingElection, setIsCreatingElection] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
 
   useEffect(() => {
@@ -50,6 +52,7 @@ function OrganizerDashboard() {
   }, [message]);
 
   const initializeWeb3 = async () => {
+    setIsPageLoading(true);
     if (window.ethereum) {
       try {
         const accounts = await window.ethereum.request({
@@ -67,12 +70,15 @@ function OrganizerDashboard() {
       } catch (error) {
         console.error('Error initializing Web3:', error);
         setMessage({ text: 'Failed to connect to wallet', type: 'error' });
+      } finally {
+        setIsPageLoading(false);
       }
     } else {
       setMessage({
         text: 'Please install MetaMask to use this application',
         type: 'error',
       });
+      setIsPageLoading(false);
     }
   };
 
@@ -214,7 +220,10 @@ function OrganizerDashboard() {
         return;
       }
 
+      setIsCreatingElection(true);
       setMessage({ text: 'Creating election...', type: 'info' });
+      
+      const { web3 } = await getDeployedContract();
 
       await contract.methods
         .createElection(
@@ -225,7 +234,11 @@ function OrganizerDashboard() {
           startTimestamp,
           endTimestamp
         )
-        .send({ from: walletAddress });
+        .send({ 
+          from: walletAddress, 
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei')
+        });
 
       setMessage({ text: 'Election created successfully!', type: 'success' });
       setShowCreateModal(false);
@@ -243,6 +256,8 @@ function OrganizerDashboard() {
     } catch (error) {
       console.error('Error creating election:', error);
       setMessage({ text: error.message || 'Failed to create election', type: 'error' });
+    } finally {
+      setIsCreatingElection(false);
     }
   };
 
@@ -306,6 +321,18 @@ function OrganizerDashboard() {
     });
     navigate('/');
   };
+
+  if (isPageLoading) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+        <Navbar walletAddress={walletAddress} userRole="organizer" onLogout={handleLogout} />
+        <Sidebar userRole="organizer" />
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '70px', marginTop: '70px' }}>
+          <p style={{ color: '#64748b', fontSize: '18px' }}>Loading Organizer Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
@@ -1228,30 +1255,35 @@ function OrganizerDashboard() {
                 </button>
                 <button
                   type="submit"
+                  disabled={isCreatingElection}
                   style={{
                     padding: '12px 32px',
-                    backgroundColor: '#16a34a',
+                    backgroundColor: isCreatingElection ? '#86efac' : '#16a34a',
                     color: 'white',
                     border: 'none',
                     borderRadius: '8px',
-                    cursor: 'pointer',
+                    cursor: isCreatingElection ? 'not-allowed' : 'pointer',
                     fontSize: '15px',
                     fontWeight: '700',
                     transition: 'all 0.2s',
-                    boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.3)'
+                    boxShadow: isCreatingElection ? 'none' : '0 4px 6px -1px rgba(22, 163, 74, 0.3)'
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#15803d';
-                    e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(22, 163, 74, 0.4)';
+                    if (!isCreatingElection) {
+                      e.currentTarget.style.backgroundColor = '#15803d';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(22, 163, 74, 0.4)';
+                    }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = '#16a34a';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(22, 163, 74, 0.3)';
+                    if (!isCreatingElection) {
+                      e.currentTarget.style.backgroundColor = '#16a34a';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(22, 163, 74, 0.3)';
+                    }
                   }}
                 >
-                  ✓ Create Election
+                  {isCreatingElection ? 'Creating...' : '✓ Create Election'}
                 </button>
               </div>
             </form>

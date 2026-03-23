@@ -247,7 +247,8 @@ export default function VoterElections() {
 
       await deployedContract.methods
         .vote(electionId, ipfsCID, pA, pB, pC, pubSignals)
-        .send({ from: walletAddress });
+        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
 
       setMessage('✅ Vote cast successfully!');
       setMessageType('success');

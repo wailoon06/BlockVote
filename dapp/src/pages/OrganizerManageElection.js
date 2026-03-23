@@ -152,11 +152,15 @@ export default function OrganizerManageElection() {
     setMessageType('info');
 
     try {
-      const { deployedContract } = await getDeployedContract();
+      const { web3, deployedContract } = await getDeployedContract();
       
       await deployedContract.methods
         .approveCandidateForElection(electionId, candidateAddress)
-        .send({ from: walletAddress });
+        .send({ 
+          from: walletAddress,
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei') 
+        });
 
       setMessage('Candidate approved successfully!');
       setMessageType('success');
@@ -180,11 +184,12 @@ export default function OrganizerManageElection() {
     setMessageType('info');
 
     try {
-      const { deployedContract } = await getDeployedContract();
+      const { web3, deployedContract } = await getDeployedContract();
       
       await deployedContract.methods
         .rejectCandidateForElection(electionId, candidateAddress)
-        .send({ from: walletAddress });
+        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
 
       setMessage('Candidate rejected');
       setMessageType('success');
@@ -331,14 +336,14 @@ export default function OrganizerManageElection() {
         throw new Error('No valid ciphertexts retrieved from IPFS');
       }
 
-      console.log(`✅ Retrieved ${ciphertexts.length} ciphertexts from IPFS`);
+      console.log(`Retrieved ${ciphertexts.length} ciphertexts from IPFS`);
 
       // Step 5: Perform homomorphic addition
       setMessage(`Aggregating ${ciphertexts.length} votes...`);
       
       const encryptedTotal = performHomomorphicAddition(publicKeyN, ciphertexts);
       
-      console.log('✅ Homomorphic aggregation complete');
+      console.log('Homomorphic aggregation complete');
       console.log('Encrypted total:', encryptedTotal.substring(0, 50) + '...');
 
       // Determine num_candidates for the extraction step at Phase 4
@@ -366,7 +371,8 @@ export default function OrganizerManageElection() {
       
       await deployedContract.methods
         .storeEncryptedTally(electionId, tallyPayload, tallyInputHash)
-        .send({ from: walletAddress });
+        .send({ from: walletAddress,maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
 
       setMessage(`Votes tallied (${ciphertexts.length} total).`);
       setMessageType('success');
@@ -501,7 +507,8 @@ export default function OrganizerManageElection() {
 
       await deployedContract.methods
         .publishResults(electionId, resultPayload, pdInputHash)
-        .send({ from: walletAddress });
+        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
 
       setMessage('✅ Results published successfully!');
       setMessageType('success');
@@ -1276,8 +1283,11 @@ export default function OrganizerManageElection() {
                                 }
                               }}
                             >
-                              <span style={{ fontSize: '18px' }}>✓</span>
-                              Approve Candidate
+                              {processing === address ? (
+                                <><span>⏳</span>Approving...</>
+                              ) : (
+                                <><span style={{ fontSize: '18px' }}>✓</span>Approve Candidate</>
+                              )}
                             </button>
                             <button
                               onClick={() => handleReject(address)}
@@ -1315,8 +1325,11 @@ export default function OrganizerManageElection() {
                                 }
                               }}
                             >
-                              <span style={{ fontSize: '18px' }}>✗</span>
-                              Reject Candidate
+                              {processing === address ? (
+                                <><span>⏳</span>Rejecting...</>
+                              ) : (
+                                <><span style={{ fontSize: '18px' }}>✗</span>Reject Candidate</>
+                              )}
                             </button>
                           </div>
                         )}
