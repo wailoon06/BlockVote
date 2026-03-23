@@ -1,49 +1,33 @@
 /**
- * IPFS Client for Browser
- * Uploads encrypted votes to IPFS Desktop from the browser
+ * IPFS Client for Browser using Pinata
+ * Uploads encrypted votes to Pinata from the browser
  */
 
 class IPFSClient {
-  constructor(apiUrl = 'http://127.0.0.1:5001') {
-    this.apiUrl = apiUrl;
+  constructor() {
+    this.jwt = import.meta.env.VITE_PINATA_JWT;
+    this.gateway = import.meta.env.VITE_PINATA_GATEWAY || 'https://gateway.pinata.cloud/ipfs';
   }
 
   /**
-   * Check if IPFS is available
+   * Check if IPFS / Pinata is available
    */
   async isAvailable() {
+    if (!this.jwt) {
+      console.warn('Pinata JWT is not defined in environment variables');
+      return false;
+    }
+
     try {
-      // Try the version endpoint first
-      const response = await fetch(`${this.apiUrl}/api/v0/version`, {
-        method: 'POST',
+      const response = await fetch('https://api.pinata.cloud/data/testAuthentication', {
         headers: {
-          'Accept': 'application/json'
+          'Authorization': `Bearer ${this.jwt}`
         }
       });
-      
-      if (response.ok) {
-        return true;
-      }
-      
-      // If we get 403, IPFS is running but CORS might be blocking
-      if (response.status === 403) {
-        console.warn('IPFS is running but CORS configuration may need updating');
-        // Return true because IPFS is actually running, just needs config
-        return true;
-      }
-      
-      return false;
+      return response.ok;
     } catch (error) {
-      // Network error - IPFS likely not running
-      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        console.error('IPFS Desktop not accessible. Is it running?');
-        return false;
-      }
-      
-      // CORS error - IPFS is running but needs configuration
-      console.warn('IPFS connection issue (possibly CORS):', error.message);
-      // Try to proceed anyway - the upload might work
-      return true;
+      console.error('Pinata authentication failed or network error:', error);
+      return false;
     }
   }
 
@@ -53,25 +37,29 @@ class IPFSClient {
    * @returns {Promise<string>} - IPFS CID
    */
   async uploadJSON(data) {
+    if (!this.jwt) {
+      throw new Error('Pinata JWT is missing. Check VITE_PINATA_JWT in .env');
+    }
+
     try {
-      const jsonString = JSON.stringify(data, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      
-      const formData = new FormData();
-      formData.append('file', blob, 'vote.json');
-      
-      const response = await fetch(`${this.apiUrl}/api/v0/add`, {
+      const response = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
         method: 'POST',
-        body: formData
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.jwt}`
+        },
+        body: JSON.stringify({
+          pinataContent: data,
+          pinataMetadata: { name: 'vote.json' }
+        })
       });
-      
+
       if (!response.ok) {
-        throw new Error(`IPFS upload failed: ${response.statusText}`);
+        throw new Error(`Upload failed: ${response.statusText}`);
       }
       
       const result = await response.json();
-      return result.Hash; // This is the CID
-      
+      return result.IpfsHash; // Pinata returns the CID as IpfsHash
     } catch (error) {
       console.error('IPFS upload error:', error);
       throw new Error(`Failed to upload to IPFS: ${error.message}`);
@@ -83,21 +71,8 @@ class IPFSClient {
    * @param {string} cid - IPFS CID to pin
    */
   async pin(cid) {
-    try {
-      const response = await fetch(`${this.apiUrl}/api/v0/pin/add?arg=${cid}`, {
-        method: 'POST'
-      });
-      
-      if (!response.ok) {
-        throw new Error(`IPFS pin failed: ${response.statusText}`);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('IPFS pin error:', error);
-      // Don't throw - pinning is optional
-      return false;
-    }
+    // Pinata's pinJSONToIPFS automatically pins the content
+    return true;
   }
 
   /**
@@ -107,17 +82,11 @@ class IPFSClient {
    */
   async retrieveJSON(cid) {
     try {
-      const response = await fetch(`${this.apiUrl}/api/v0/cat?arg=${cid}`, {
-        method: 'POST'
-      });
-      
+      const response = await fetch(`${this.gateway}/${cid}`);
       if (!response.ok) {
         throw new Error(`IPFS retrieval failed: ${response.statusText}`);
       }
-      
-      const text = await response.text();
-      return JSON.parse(text);
-      
+      return await response.json();
     } catch (error) {
       console.error('IPFS retrieval error:', error);
       throw new Error(`Failed to retrieve from IPFS: ${error.message}`);
@@ -130,7 +99,7 @@ class IPFSClient {
    * @returns {string} - Gateway URL
    */
   getGatewayUrl(cid) {
-    return `http://127.0.0.1:8080/ipfs/${cid}`;
+    return `${this.gateway}/${cid}`;
   }
 }
 

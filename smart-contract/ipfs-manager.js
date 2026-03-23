@@ -1,90 +1,38 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import FormData from 'form-data';
 import axios from 'axios';
+import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 class IPFSManager {
-    constructor(ipfsApiUrl = 'http://127.0.0.1:5001') {
-        this.ipfsApiUrl = ipfsApiUrl;
-        this.ipfs = null;
+    constructor() {
+        this.jwt = process.env.PINATA_JWT;
+        this.gateway = process.env.PINATA_GATEWAY || 'https://gateway.pinata.cloud/ipfs';
         this.initPromise = this.initializeIPFS();
     }
 
     async initializeIPFS() {
         try {
-            // Use axios with IPFS API for better Node.js compatibility
-            
-            try {
-                // Test connection using axios
-                const response = await axios.post(
-                    'http://127.0.0.1:5001/api/v0/version',
-                    null,
-                    { timeout: 5000 }
-                );
-                
-                // Use axios with form-data for better Node.js compatibility
-                this.ipfs = {
-                    add: async (content) => {
-                        const formData = new FormData();
-                        formData.append('file', Buffer.from(content), {
-                            filename: 'vote.json',
-                            contentType: 'application/json'
-                        });
-                        
-                        const res = await axios.post(
-                            'http://127.0.0.1:5001/api/v0/add',
-                            formData,
-                            {
-                                headers: formData.getHeaders(),
-                                maxContentLength: Infinity,
-                                maxBodyLength: Infinity
-                            }
-                        );
-                        
-                        return { path: res.data.Hash, size: res.data.Size };
-                    },
-                    cat: async function* (cid) {
-                        const res = await axios.post(
-                            `http://127.0.0.1:5001/api/v0/cat?arg=${cid}`,
-                            null,
-                            { responseType: 'text' }
-                        );
-                        yield Buffer.from(res.data);
-                    },
-                    pin: {
-                        add: async (cid) => {
-                            await axios.post(
-                                `http://127.0.0.1:5001/api/v0/pin/add?arg=${cid}`
-                            );
-                        }
-                    },
-                    id: async () => {
-                        const res = await axios.post('http://127.0.0.1:5001/api/v0/id');
-                        return res.data;
-                    }
-                };
-                
-                console.log('✅ IPFS client initialized successfully (using axios)');
-                return true;
-            } catch (testError) {
-                console.warn('⚠️  IPFS connection test failed');
-                console.warn(`   Trying to connect to: http://127.0.0.1:5001`);
-                console.warn(`   Error: ${testError.message}`);
-                console.warn('');
-                console.warn('   Troubleshooting:');
-                console.warn('   • Is IPFS Desktop running?');
-                console.warn('   • Check Settings → IPFS Config → "API": "/ip4/127.0.0.1/tcp/5001"');
-                console.warn('   • Try restarting IPFS Desktop');
-                this.ipfs = null;
+            if (!this.jwt || this.jwt === 'your_pinata_jwt_here') {
+                console.warn('⚠️ PINATA_JWT not configured properly in environment variables');
                 return false;
             }
+
+            // Test Pinata Authentication
+            await axios.get('https://api.pinata.cloud/data/testAuthentication', {
+                headers: {
+                    'Authorization': `Bearer ${this.jwt}`
+                },
+                timeout: 5000
+            });
+            
+            console.log('✅ Pinata IPFS client initialized successfully');
+            return true;
         } catch (error) {
-            console.warn('⚠️  IPFS client initialization failed:', error.message);
-            this.ipfs = null;
+            console.warn('⚠️ Pinata client initialization failed:', error.message);
             return false;
         }
     }
@@ -101,24 +49,35 @@ class IPFSManager {
     async uploadEncryptedVote(encryptedVoteData) {
         await this.ensureInitialized();
         
-        if (!this.ipfs) {
-            throw new Error('IPFS client not initialized. Is IPFS Desktop running?');
+        if (!this.jwt || this.jwt === 'your_pinata_jwt_here') {
+            throw new Error('Pinata JWT is missing. Cannot upload to IPFS.');
         }
 
         try {
-            // Convert vote data to JSON string
-            const voteJson = JSON.stringify(encryptedVoteData, null, 2);
+            const response = await axios.post(
+                'https://api.pinata.cloud/pinning/pinJSONToIPFS',
+                {
+                    pinataContent: encryptedVoteData,
+                    pinataMetadata: { name: 'vote.json' }
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.jwt}`
+                    }
+                }
+            );
             
-            // Upload to IPFS
-            const result = await this.ipfs.add(voteJson);
+            console.log('✅ Encrypted vote uploaded to Pinata IPFS');
+            console.log(`   CID: ${response.data.IpfsHash}`);
+            console.log(`   Size: ${response.data.PinSize} bytes`);
             
-            console.log('✅ Encrypted vote uploaded to IPFS');
-            console.log(`   CID: ${result.path}`);
-            console.log(`   Size: ${result.size} bytes`);
-            
-            return result.path; // This is the CID
+            return response.data.IpfsHash; // This is the CID
         } catch (error) {
-            console.error('❌ Failed to upload to IPFS:', error.message);
+            console.error('❌ Failed to upload to Pinata IPFS:', error.message);
+            if (error.response && error.response.data) {
+                console.error('API Error:', error.response.data);
+            }
             throw error;
         }
     }
@@ -129,27 +88,11 @@ class IPFSManager {
      * @returns {Promise<Object>} Encrypted vote data
      */
     async retrieveEncryptedVote(cid) {
-        await this.ensureInitialized();
-        
-        if (!this.ipfs) {
-            throw new Error('IPFS client not initialized. Is IPFS Desktop running?');
-        }
-
         try {
-            const chunks = [];
-            
-            // Retrieve from IPFS
-            for await (const chunk of this.ipfs.cat(cid)) {
-                chunks.push(chunk);
-            }
-            
-            // Combine chunks and parse JSON
-            const data = Buffer.concat(chunks).toString('utf-8');
-            const voteData = JSON.parse(data);
-            
+            // Retrieve via an IPFS Gateway
+            const response = await axios.get(`${this.gateway}/${cid}`);
             console.log('✅ Retrieved encrypted vote from IPFS');
-            
-            return voteData;
+            return response.data;
         } catch (error) {
             console.error('❌ Failed to retrieve from IPFS:', error.message);
             throw error;
@@ -161,19 +104,9 @@ class IPFSManager {
      * @param {string} cid - IPFS CID
      */
     async pinEncryptedVote(cid) {
-        await this.ensureInitialized();
-        
-        if (!this.ipfs) {
-            throw new Error('IPFS client not initialized');
-        }
-
-        try {
-            await this.ipfs.pin.add(cid);
-            console.log(`✅ Pinned CID: ${cid}`);
-        } catch (error) {
-            console.error('❌ Failed to pin:', error.message);
-            throw error;
-        }
+        // Automatically pinned on upload via Pinata API
+        console.log(`✅ Pinned CID: ${cid}`);
+        return true;
     }
 
     /**
@@ -185,7 +118,6 @@ class IPFSManager {
     async saveToFile(encryptedVoteData, filename) {
         const votesDir = path.join(__dirname, '..', 'encrypted_votes');
         
-        // Create directory if it doesn't exist
         if (!fs.existsSync(votesDir)) {
             fs.mkdirSync(votesDir, { recursive: true });
         }
@@ -217,20 +149,19 @@ class IPFSManager {
      * @returns {Promise<boolean>}
      */
     async isAvailable() {
-        await this.ensureInitialized();
+        if (!this.jwt || this.jwt === 'your_pinata_jwt_here') return false;
         
-        if (!this.ipfs) {
-            return false;
-        }
-
         try {
-            const id = await this.ipfs.id();
-            // Handle both ipfs-http-client format and fetch API format
-            const peerId = id.ID || (id.id && id.id.toString()) || 'unknown';
-            console.log(`✅ IPFS node connected: ${peerId.substring(0, 20)}...`);
+            await axios.get('https://api.pinata.cloud/data/testAuthentication', {
+                headers: {
+                    'Authorization': `Bearer ${this.jwt}`
+                },
+                timeout: 5000
+            });
+            console.log(`✅ Pinata IPFS connected`);
             return true;
         } catch (error) {
-            console.error(`❌ IPFS connection test failed: ${error.message}`);
+            console.error(`❌ Pinata connection test failed: ${error.message}`);
             return false;
         }
     }
