@@ -198,7 +198,7 @@ export default function Home() {
           if (accounts.length > 0) {
             setWalletAddress(accounts[0]);
             setIsConnected(true);
-            setMessage('Wallet connected successfully!');
+            setMessage('Wallet connected successfully! Redirecting to dashboard...');
             setMessageType('success');
             
             navigate('/organizer-register', { state: { walletAddress: accounts[0] } });
@@ -253,7 +253,7 @@ export default function Home() {
         if (accounts.length > 0) {
           setWalletAddress(accounts[0]);
           setIsConnected(true);
-          setMessage('Wallet connected successfully!');
+          setMessage('Wallet connected successfully! Redirecting to dashboard...');
           setMessageType('success');
           
           await checkRegistrationStatus(accounts[0]);
