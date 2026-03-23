@@ -15,13 +15,7 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
 # Initialize EasyOCR reader globally (English and Malay)
-reader = None
-
-def get_reader():
-    global reader
-    if reader is None:
-        reader = easyocr.Reader(['en', 'ms'], gpu=False)
-    return reader
+reader = easyocr.Reader(['en', 'ms'], gpu=False)
 
 # Regex pattern for Malaysian IC: YYMMDD-PP-XXXX
 IC_PATTERN = r"\b(\d{6}-\d{2}-\d{4})\b"
