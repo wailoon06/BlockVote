@@ -328,7 +328,7 @@ function OrganizerDashboard() {
         <Navbar walletAddress={walletAddress} userRole="organizer" onLogout={handleLogout} />
         <Sidebar userRole="organizer" />
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '70px', marginTop: '70px' }}>
-          <p style={{ color: '#64748b', fontSize: '18px' }}>Loading Organizer Dashboard...</p>
+          <p style={{ color: '#64748b', fontSize: '18px' }}>Loading...</p>
         </div>
       </div>
     );
@@ -338,9 +338,10 @@ function OrganizerDashboard() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <Navbar walletAddress={walletAddress} userRole="organizer" onLogout={handleLogout} />
       <Sidebar userRole="organizer" />
-      <MessageAlert message={message.text} type={message.type} />
 
-      <div style={{ margin: '0', marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: '1600px' }}>
+      <div style={{ marginLeft: '70px', padding: '40px 30px', paddingTop: 'calc(70px + 40px)', maxWidth: 'calc(100% - 70px)', boxSizing: 'border-box' }}>
+        <MessageAlert message={message.text} type={message.type} />
+
         {/* Header Section */}
         <div style={{ marginBottom: '40px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
@@ -795,7 +796,7 @@ function OrganizerDashboard() {
                       }}
                     >
                       <span>👥</span>
-                      Manage Candidates
+                      Manage Election
                     </button>
                     <button
                       onClick={() => navigate('/election-results', { state: { electionId: election.id } })}

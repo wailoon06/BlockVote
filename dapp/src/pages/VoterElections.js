@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
 import { encryptVote, getPublicKey, getCandidateIndex, computeVoteBlock } from '../utils/voteEncryption';
 import { generateVoteProof } from '../utils/zkpProofGenerator';
-import { getVoterSecret, computeNullifier, toBytes32 } from '../utils/poseidonUtils';
+import { getVoterSecret, computeNullifier, toBytes32, generateDeterministicVoterSecret, storeVoterSecret } from '../utils/poseidonUtils';
 import IPFSClient from '../utils/ipfsClient';
 import MessageAlert from '../components/MessageAlert';
 import Navbar from '../components/Navbar';
@@ -126,7 +126,15 @@ export default function VoterElections() {
       const now = Math.floor(Date.now() / 1000);
 
       // Load voter secret once — needed to derive per-election nullifiers
-      const voterSecret = await getVoterSecret(address);
+      let voterSecret = await getVoterSecret(address);
+      if (!voterSecret) {
+        try {
+          voterSecret = await generateDeterministicVoterSecret(address);
+          await storeVoterSecret(address, voterSecret);
+        } catch (e) {
+          console.error("Failed to auto-recover voter secret", e);
+        }
+      }
 
       for (let i = 1; i <= totalElections; i++) {
         const info = await contract.methods.getElectionInfo(i).call();
@@ -232,9 +240,14 @@ export default function VoterElections() {
       // ── Step 3: Generate ZKP vote proof ──────────────────────────────
       setMessage('Generating ZK proof (may take ~30s)...');
 
-      const voterSecret = await getVoterSecret(walletAddress);
+      let voterSecret = await getVoterSecret(walletAddress);
       if (!voterSecret) {
-        throw new Error('Voter secret not found. Please re-verify your identity first.');
+        try {
+          voterSecret = await generateDeterministicVoterSecret(walletAddress);
+          await storeVoterSecret(walletAddress, voterSecret);
+        } catch (e) {
+          throw new Error('Voter secret not found. Please re-verify your identity first.');
+        }
       }
 
       const { pA, pB, pC, pubSignals, choiceCommitmentHex } = await generateVoteProof(
@@ -247,8 +260,10 @@ export default function VoterElections() {
 
       await deployedContract.methods
         .vote(electionId, ipfsCID, pA, pB, pC, pubSignals)
-        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
-          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
+        .send({ from: walletAddress,gas: 3000000
+          , maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          // maxFeePerGas: web3.utils.toWei('45', 'gwei') 
+        });
 
       setMessage('✅ Vote cast successfully!');
       setMessageType('success');

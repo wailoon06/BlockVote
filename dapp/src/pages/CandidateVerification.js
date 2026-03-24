@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
 import { verifyICMatch } from '../utils/icHashUtils';
 import { generateRegistrationProof } from '../utils/zkpProofGenerator';
-import { generateVoterSecret, storeVoterSecret, getVoterSecret } from '../utils/poseidonUtils';
+import { generateDeterministicVoterSecret, storeVoterSecret, getVoterSecret } from '../utils/poseidonUtils';
 import Navbar from '../components/Navbar';
 import MessageAlert from '../components/MessageAlert';
 
@@ -195,9 +195,9 @@ export default function CandidateVerify() {
       // Step 3: Retrieve or generate candidate secret (persisted in localStorage, encrypted with MetaMask key)
       let voterSecret = await getVoterSecret(walletAddress);
       if (!voterSecret) {
-        voterSecret = generateVoterSecret();
+        voterSecret = await generateDeterministicVoterSecret(walletAddress);
         await storeVoterSecret(walletAddress, voterSecret);
-        console.log('[ZKP] New secret generated and stored locally');
+        console.log('[ZKP] New deterministic secret derived and stored locally');
       } else {
         console.log('[ZKP] Using existing secret from localStorage');
       }

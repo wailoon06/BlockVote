@@ -82,6 +82,9 @@ const SECRET_KEY = (address) => `voterSecret_enc_${address.toLowerCase()}`;
 const SIGN_MESSAGE = (address) =>
   `BlockVote voter secret encryption key\nAddress: ${address.toLowerCase()}\n\nSigning this message encrypts your voter secret. It does not cost gas or submit a transaction.`;
 
+const DETERMINISTIC_SECRET_MESSAGE = (address) =>
+  `BlockVote identity derivation\nAddress: ${address.toLowerCase()}\n\nSigning this message derives your permanent zero-knowledge identity. Keep this wallet secure.`;
+
 /**
  * Derive an AES-256-GCM CryptoKey from a MetaMask personal_sign signature.
  * @param {string} walletAddress
@@ -109,7 +112,38 @@ async function deriveEncryptionKey(walletAddress) {
 }
 
 /**
+ * Generate a deterministic voter secret within the BN128 field derived from a wallet signature.
+ * Ensures the user can recover their identity anywhere just by signing with their wallet.
+ * @param {string} walletAddress
+ * @returns {Promise<string>} decimal string
+ */
+export async function generateDeterministicVoterSecret(walletAddress) {
+  const message = DETERMINISTIC_SECRET_MESSAGE(walletAddress);
+  const msgHex = '0x' + Array.from(new TextEncoder().encode(message))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+
+  const signature = await window.ethereum.request({
+    method: 'personal_sign',
+    params: [msgHex, walletAddress],
+  });
+
+  // Hash the signature to 32 bytes to use as entropy
+  const sigBytes = Uint8Array.from(
+    signature.slice(2).match(/.{2}/g).map(b => parseInt(b, 16))
+  );
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', sigBytes);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // Modulo the BN128 field order to ensure it is a valid field element
+  const FIELD_ORDER = BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
+  const secret = BigInt('0x' + hashHex) % FIELD_ORDER;
+  return secret.toString();
+}
+
+/**
  * Generate a cryptographically random voter secret within the BN128 field.
+ * (Legacy, kept for backward compatibility reference, use generateDeterministicVoterSecret instead)
  * @returns {string} decimal string
  */
 export function generateVoterSecret() {

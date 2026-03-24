@@ -65,13 +65,13 @@ Set-Location $contractRoot
 $env:DEPLOY_NETWORK = $Network
 
 Write-Host "`n[2/7] Installing dependencies..." -ForegroundColor Yellow
-npm install
+cmd /c npm install
 if ($LASTEXITCODE -ne 0) {
     throw "npm install failed"
 }
 
 Write-Host "`n[3/7] Compiling contracts (Hardhat)..." -ForegroundColor Yellow
-npm run compile
+cmd /c npm run compile
 if ($LASTEXITCODE -ne 0) {
     throw "Compile failed"
 }

@@ -94,11 +94,11 @@ export default function OrganizerRegister() {
       const { web3, deployedContract } = await getDeployedContract();
 
       // Call registerOrganizer function
-      const emailHash = hashString(formData.email);
+
       const result = await deployedContract.methods
         .registerOrganizer(
           formData.organizationName,
-          emailHash,
+          formData.email,
           formData.description
         )
         .send({ 
@@ -109,7 +109,7 @@ export default function OrganizerRegister() {
 
       console.log('Registration result:', result);
 
-      setMessage('✅ Application submitted successfully! Awaiting approval from Election Commission.');
+      setMessage('Application submitted successfully! Awaiting approval from Election Commission.');
       setMessageType('success');
       setIsRegistered(true);
       setOrganizerStatus('PENDING');

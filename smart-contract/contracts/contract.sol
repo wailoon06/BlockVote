@@ -89,7 +89,7 @@ contract Contract {
     // ===== EXISTING STRUCTS =====
     struct Voter {
         address wallet;
-        bytes32 nameHash;
+        string name;
         bytes32 icHash;
         bytes32 emailHash;
         uint8 status;       // 0=PENDING_VERIFICATION, 1=VERIFIED
@@ -116,7 +116,7 @@ contract Contract {
     struct Organizer {
         address wallet;
         string organizationName;
-        bytes32 emailHash;
+        string email;
         string description;
         uint8 status;       // 0=PENDING, 1=APPROVED, 2=REJECTED
         uint256 registeredAt;
@@ -361,7 +361,7 @@ contract Contract {
     
     event VoterRegistered(
         address indexed wallet,
-        bytes32 nameHash,
+        string name,
         bytes32 emailHash,
         uint256 timestamp
     );
@@ -376,7 +376,7 @@ contract Contract {
     event OrganizerRegistered(
         address indexed applicant,
         string organizationName,
-        bytes32 emailHash,
+        string email,
         uint256 timestamp
     );
 
@@ -444,7 +444,7 @@ contract Contract {
     // Voter Logics //
     //////////////////
     function registerVoter(
-        bytes32 _nameHash,
+        string memory _name,
         bytes32 _icHash,
         bytes32 _emailHash
     ) external returns (bytes32) {
@@ -456,7 +456,7 @@ contract Contract {
         bytes32 verificationCode = keccak256(
             abi.encodePacked(
                 msg.sender,
-                _nameHash,
+                _name,
                 _icHash,
                 _emailHash,
                 block.timestamp
@@ -464,7 +464,7 @@ contract Contract {
         );
         voters[msg.sender] = Voter({
             wallet: msg.sender,
-            nameHash: _nameHash,
+            name: _name,
             icHash: _icHash,
             emailHash: _emailHash,
             status: 0,
@@ -477,7 +477,7 @@ contract Contract {
         usedICs[_icHash] = true;
         usedEmails[_emailHash] = true;
         
-        emit VoterRegistered(msg.sender, _nameHash, _emailHash, block.timestamp);
+        emit VoterRegistered(msg.sender, _name, _emailHash, block.timestamp);
         
         return verificationCode;
     }
@@ -539,7 +539,7 @@ contract Contract {
     }
     
     function getVoterInfo(address _wallet) external view returns (
-        bytes32 nameHash,
+        string memory name,
         bytes32 emailHash,
         string memory status,
         uint256 registeredAt,
@@ -549,7 +549,7 @@ contract Contract {
         
         Voter memory voter = voters[_wallet];
         return (
-            voter.nameHash,
+            voter.name,
             voter.emailHash,
             voter.status == 1 ? "VERIFIED" : "PENDING_VERIFICATION",
             voter.registeredAt,
@@ -650,27 +650,25 @@ contract Contract {
 
     function registerOrganizer(
         string calldata _organizationName,
-        bytes32 _emailHash,
+        string calldata _email,
         string calldata _description
     ) external returns (bool) {
         if (organizers[msg.sender].isRegistered) revert AlreadyRegistered();
         if (bytes(_organizationName).length == 0) revert EmptyInput();
-        
+
         organizers[msg.sender] = Organizer({
             wallet: msg.sender,
             organizationName: _organizationName,
-            emailHash: _emailHash,
+            email: _email,
             description: _description,
             status: 0,
             registeredAt: block.timestamp,
             isRegistered: true
         });
-        
+
         organizerList.push(msg.sender);
-        
-        emit OrganizerRegistered(msg.sender, _organizationName, _emailHash, block.timestamp);
-        
-        return true;
+
+        emit OrganizerRegistered(msg.sender, _organizationName, _email, block.timestamp);
     }
 
     function verifyOrganizer(address _applicant) external onlyAdmin returns (bool) {
@@ -686,18 +684,18 @@ contract Contract {
 
     function getOrganizerInfo(address _applicant) external view returns (
         string memory organizationName,
-        bytes32 emailHash,
+        string memory email,
         string memory description,
         string memory status,
         uint256 registeredAt
     ) {
         if (!organizers[_applicant].isRegistered) revert NotRegistered();
-        
+
         Organizer memory org = organizers[_applicant];
         string memory statusStr = org.status == 1 ? "APPROVED" : (org.status == 2 ? "REJECTED" : "PENDING");
         return (
             org.organizationName,
-            org.emailHash,
+            org.email,
             org.description,
             statusStr,
             org.registeredAt

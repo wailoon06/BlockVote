@@ -79,15 +79,14 @@ export default function Register() {
 
       const { web3, deployedContract } = await getDeployedContract();
 
-      const nameHash = hashString(formData.name);
       const emailHash = hashString(formData.email);
       const icHash = hashIC(formData.ic);
 
       const result = await deployedContract.methods
-        .registerVoter(nameHash, icHash, emailHash)
+        .registerVoter(formData.name, icHash, emailHash)
         .send({ 
-          from: walletAddress,
-          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
+          from: walletAddress
+          ,maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
           maxFeePerGas: web3.utils.toWei('45', 'gwei')
         });
 

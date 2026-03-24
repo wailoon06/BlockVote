@@ -79,7 +79,7 @@ export default function AllUsers() {
         const info = await deployedContract.methods.getVoterInfo(address).call();
         return {
           wallet: address,
-          name: sessionStorage.getItem('voter_name_' + address) || '[ZKP Hashed]',
+          name: info.name,
           email: sessionStorage.getItem('voter_email_' + address) || '[ZKP Hashed]',
           status: info.status,
           role: 'Voter',

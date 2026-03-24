@@ -81,16 +81,32 @@ class IPFSClient {
    * @returns {Promise<Object>} - Retrieved data
    */
   async retrieveJSON(cid) {
-    try {
-      const response = await fetch(`${this.gateway}/${cid}`);
-      if (!response.ok) {
-        throw new Error(`IPFS retrieval failed: ${response.statusText}`);
+    // List of public gateways known to have better CORS policies
+    const gateways = [
+      this.gateway,                           // Try the configured/Pinata primary first
+      'https://cloudflare-ipfs.com/ipfs',     // Cloudflare
+      'https://ipfs.io/ipfs',                 // Protocol Labs Official
+      'https://dweb.link/ipfs'                // Protocol Labs dweb
+    ];
+
+    let lastError;
+
+    // Loop through gateways until one succeeds
+    for (const gw of gateways) {
+      try {
+        const response = await fetch(`${gw}/${cid}`);
+        if (!response.ok) {
+          throw new Error(`IPFS retrieval failed on ${gw}: ${response.statusText}`);
+        }
+        return await response.json(); // Success! Return the data
+      } catch (error) {
+        console.warn(`Gateway fallback - failed fetching from ${gw}:`, error.message);
+        lastError = error;
       }
-      return await response.json();
-    } catch (error) {
-      console.error('IPFS retrieval error:', error);
-      throw new Error(`Failed to retrieve from IPFS: ${error.message}`);
     }
+
+    console.error('IPFS retrieval error on all fallback gateways:', lastError);
+    throw new Error(`Failed to retrieve from IPFS: ${lastError.message}`);
   }
 
   /**

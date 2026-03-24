@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { getDeployedContract } from '../utils/contractUtils';
 import { verifyICMatch } from '../utils/icHashUtils';
 import { generateRegistrationProof } from '../utils/zkpProofGenerator';
-import { generateVoterSecret, storeVoterSecret, getVoterSecret } from '../utils/poseidonUtils';
+import { generateDeterministicVoterSecret, storeVoterSecret, getVoterSecret } from '../utils/poseidonUtils';
 import Navbar from '../components/Navbar';
 import MessageAlert from '../components/MessageAlert';
 
@@ -194,9 +194,9 @@ export default function Verify() {
       // Step 3: Retrieve or generate voter secret (persisted in localStorage, encrypted with MetaMask key)
       let voterSecret = await getVoterSecret(walletAddress);
       if (!voterSecret) {
-        voterSecret = generateVoterSecret();
+        voterSecret = await generateDeterministicVoterSecret(walletAddress);
         await storeVoterSecret(walletAddress, voterSecret);
-        console.log('[ZKP] New voter secret generated and stored locally');
+        console.log('[ZKP] New deterministic voter secret derived and stored locally');
       } else {
         console.log('[ZKP] Using existing voter secret from localStorage');
       }
@@ -222,7 +222,7 @@ export default function Verify() {
           maxFeePerGas: web3.utils.toWei('45', 'gwei') 
         });
 
-      setMessage('✅ Verification complete!');
+      setMessage('Verification complete!');
       setMessageType('success');
       
       setTimeout(() => {
