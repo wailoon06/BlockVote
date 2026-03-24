@@ -103,8 +103,7 @@ export default function OrganizerRegister() {
         )
         .send({ 
           from: walletAddress,
-          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
-          maxFeePerGas: web3.utils.toWei('45', 'gwei')
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000
         });
 
       console.log('Registration result:', result);

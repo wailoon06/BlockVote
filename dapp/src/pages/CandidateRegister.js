@@ -95,8 +95,7 @@ export default function CandidateRegister() {
         .registerCandidate(formData.name, icHash, formData.email, formData.party, formData.manifesto)
         .send({ 
           from: walletAddress,
-          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
-          maxFeePerGas: web3.utils.toWei('45', 'gwei')
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000
          });
 
       setMessage('Registration successful! Redirecting to verification...');

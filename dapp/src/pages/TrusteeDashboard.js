@@ -240,8 +240,7 @@ export default function TrusteeDashboard() {
           await deployedContract.methods.submitPartialDecryption(election.id, finalSubmitPayload).send({
             from: walletAddress,
             gas: 3000000,
-            maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), 
-          maxFeePerGas: web3.utils.toWei('45', 'gwei')
+            maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000
         });
 
         setMessage('Partial decryption submitted successfully! The organizer will now be able to tally the results.');

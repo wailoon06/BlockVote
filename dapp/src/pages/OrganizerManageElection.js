@@ -158,8 +158,7 @@ export default function OrganizerManageElection() {
         .approveCandidateForElection(electionId, candidateAddress)
         .send({ 
           from: walletAddress,
-          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
-          maxFeePerGas: web3.utils.toWei('45', 'gwei') 
+          maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000
         });
 
       setMessage('Candidate approved successfully!');
@@ -188,8 +187,7 @@ export default function OrganizerManageElection() {
       
       await deployedContract.methods
         .rejectCandidateForElection(electionId, candidateAddress)
-        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
-          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
+        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000 });
 
       setMessage('Candidate rejected');
       setMessageType('success');
@@ -371,8 +369,7 @@ export default function OrganizerManageElection() {
       
       await deployedContract.methods
         .storeEncryptedTally(electionId, tallyPayload, tallyInputHash)
-        .send({ from: walletAddress,maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
-          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
+        .send({ from: walletAddress,maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000 });
 
       setMessage(`Votes tallied (${ciphertexts.length} total).`);
       setMessageType('success');
@@ -507,8 +504,7 @@ export default function OrganizerManageElection() {
 
       await deployedContract.methods
         .publishResults(electionId, resultPayload, pdInputHash)
-        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'), // Set above minimum 25 Gwei
-          maxFeePerGas: web3.utils.toWei('45', 'gwei') });
+        .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000 });
 
       setMessage('✅ Results published successfully!');
       setMessageType('success');
