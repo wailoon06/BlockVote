@@ -1,6 +1,7 @@
 // ZKP Configuration
 // Update these values after deploying and pinning artifacts
-
+import * as dotenv from "dotenv";
+dotenv.config();
 export const ZKP_CONFIG = {
   // ── regCheck circuit (used for both registration & voting) ──────────────
   // Circuit public signals (nPublic = 9):
@@ -17,15 +18,14 @@ export const ZKP_CONFIG = {
   voteArtifacts: {
     wasm: {
       localPath: '/zkp/regCheck.wasm',
-      cid: null,
-      gateway: 'https://ipfs.io/ipfs/',
+      cid: bafybeidan73dkser2wvks2lhdr5brrzkfa64k7tvskj46opmyaw7qgnuae,
+      gateway: 'https://gateway.pinata.cloud/ipfs/teal-official-eel-228.mypinata.cloud',
       sha256: "de35bfb7adcbe3cdbe90e0e72aaef8995afdc874f61db4c5b57a874e2e8fc26b"  // paste SHA-256 from Ubuntu after copying
     },
     zkey: {
-      // File copied from Ubuntu: circuit_final.zkey
       localPath: '/zkp/regCheck_final.zkey',
-      cid: null,
-      gateway: 'https://ipfs.io/ipfs/',
+      cid: bafybeicla7cu2365pvzbe57yudihavwuks26q23idtch6ytgfjrwnxgtjy,
+      gateway: 'https://gateway.pinata.cloud/ipfs/teal-official-eel-228.mypinata.cloud',
       sha256: "48910ffa5591a6921e5152daa8dfd20cfa2caa9d9d39f5f572c3eb7afb102e00"  // paste SHA-256 from Ubuntu after copying
     }
   },
