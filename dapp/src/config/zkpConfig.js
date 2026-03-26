@@ -1,7 +1,5 @@
 // ZKP Configuration
 // Update these values after deploying and pinning artifacts
-import * as dotenv from "dotenv";
-dotenv.config();
 export const ZKP_CONFIG = {
   // ── regCheck circuit (used for both registration & voting) ──────────────
   // Circuit public signals (nPublic = 9):
