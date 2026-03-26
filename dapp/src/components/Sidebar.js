@@ -12,8 +12,7 @@ export default function Sidebar({ userRole }) {
         { icon: '🏠', label: 'Dashboard', path: '/admin' },
         { icon: '👥', label: 'All Users', path: '/users' },
         { icon: '✓', label: 'Verify Voters', path: '/verify' },
-        { icon: '🗳️', label: 'Elections', path: '/elections' },
-        { icon: '⚙️', label: 'Settings', path: '/settings' }
+        { icon: '🗳️', label: 'Elections', path: '/elections' }
       ];
     } else if (userRole === 'organizer') {
       return [

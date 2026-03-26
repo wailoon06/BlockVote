@@ -307,6 +307,7 @@ export function computeVoteBlock(totalVoters) {
  */
 export async function encryptVote(publicKeyN, candidateIndex, voteBlock, numCandidates = 1) {
   try {
+    const startTime = performance.now();
     const publicKey = new PaillierPublicKey(publicKeyN);
     const B = BigInt(voteBlock);
 
@@ -323,6 +324,9 @@ export async function encryptVote(publicKeyN, candidateIndex, voteBlock, numCand
     
     // Generate CDS proof of well-formedness
     const paillier_zkp = await generateCDSProof(publicKeyN, encryptedVote, r, candidateIndex, validPlaintexts);
+
+    const endTime = performance.now();
+    console.log(`[Voting] Paillier Encryption Time: ${(endTime - startTime).toFixed(2)} ms`);
 
     return {
       encrypted_vote: encryptedVote,

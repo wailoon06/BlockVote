@@ -198,55 +198,6 @@ export default function Navbar({ title, walletAddress, onLogout, userRole, userS
                           📋 My Elections
                         </div>
                       )}
-                      <div
-                        onClick={() => {
-                          navigate('/profile');
-                          setShowProfileMenu(false);
-                        }}
-                        style={{
-                          padding: '0.75rem 1rem',
-                          cursor: 'pointer',
-                          borderRadius: '8px',
-                          fontSize: '0.95rem',
-                          color: '#475569',
-                          transition: 'all 0.15s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#f8fafc';
-                          e.currentTarget.style.color = '#1e293b';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                          e.currentTarget.style.color = '#475569';
-                        }}
-                      >
-                        👤 My Profile
-                      </div>
-                      
-                      <div
-                        onClick={() => {
-                          navigate('/settings');
-                          setShowProfileMenu(false);
-                        }}
-                        style={{
-                          padding: '0.75rem 1rem',
-                          cursor: 'pointer',
-                          borderRadius: '8px',
-                          fontSize: '0.95rem',
-                          color: '#475569',
-                          transition: 'all 0.15s'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#f8fafc';
-                          e.currentTarget.style.color = '#1e293b';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                          e.currentTarget.style.color = '#475569';
-                        }}
-                      >
-                        ⚙️ Settings
-                      </div>
                     </div>
 
                     <div style={{

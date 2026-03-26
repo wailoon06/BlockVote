@@ -8,7 +8,7 @@ async function main() {
     "https://polygon-amoy.infura.io/v3/ae885df7ad224699ae0c853b54d5d916";
   const PRIVATE_KEY = process.env.PRIVATE_KEY;
   const ADDRESSES_STRING = process.env.RECEIVER_ADDRESSES;
-  const AMOUNT = "2"; // Update amount to 2 POL
+  const AMOUNT = "0.5"; // Update amount to 2 POL
 
   if (!PRIVATE_KEY) throw new Error("Missing PRIVATE_KEY in .env");
   if (!ADDRESSES_STRING) throw new Error("Missing RECEIVER_ADDRESSES in .env. Format: 0x123...,0x456...");

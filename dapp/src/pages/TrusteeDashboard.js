@@ -158,7 +158,7 @@ export default function TrusteeDashboard() {
         try { tallyPayload = JSON.parse(election.encryptedTally); } catch { tallyPayload = { encrypted_total: election.encryptedTally }; }
 
           // --- Failsafe: Verify the Organizer's Encrypted Tally ---
-          setMessage('Verifying ZKP proofs and homomorphic tallies.');
+          setMessage('Verifying ZKP proofs and homomorphic tallies...');
           
           try {
               const nullifiers = await deployedContract.methods.getZKPVoteNullifiers(election.id).call();
@@ -240,7 +240,7 @@ export default function TrusteeDashboard() {
           await deployedContract.methods.submitPartialDecryption(election.id, finalSubmitPayload).send({
             from: walletAddress,
             gas: 3000000,
-            maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000
+            maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei')
         });
 
         setMessage('Partial decryption submitted successfully! The organizer will now be able to tally the results.');

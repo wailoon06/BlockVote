@@ -339,11 +339,14 @@ export async function generateVoteProof(ic, walletAddress, voterSecret, election
   console.log('[ZKP] Generating proof (may take 10–30 s)...');
   let proof, publicSignals;
   try {
+    const startTime = performance.now();
     ({ proof, publicSignals } = await snarkjs.groth16.fullProve(
       input,
       new Uint8Array(wasmBuffer),
       zkeyBuffer
     ));
+    const endTime = performance.now();
+    console.log(`[Voting] ZKP Generation Time: ${(endTime - startTime).toFixed(2)} ms`);
   } catch (err) {
     throw friendlyProofError(err);
   }
