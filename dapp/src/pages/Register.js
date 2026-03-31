@@ -345,19 +345,6 @@ export default function Register() {
             >
               {loading ? 'Registering...' : !walletAddress ? 'Connect Wallet First' : 'Complete Registration'}
             </button>
-
-            <div style={{
-              marginTop: '1.5rem',
-              padding: '1rem',
-              backgroundColor: '#e8f4f8',
-              borderRadius: '0.5rem',
-              border: '1px solid #2c5282',
-              fontSize: '0.875rem',
-              color: '#495057',
-              lineHeight: '1.6'
-            }}>
-              ℹ️ After registration, you'll receive a verification code. Keep it safe to verify your account.
-            </div>
           </form>
         </div>
       </div>

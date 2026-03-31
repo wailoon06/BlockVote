@@ -80,7 +80,7 @@ export default function AllUsers() {
         return {
           wallet: address,
           name: info.name,
-          email: sessionStorage.getItem('voter_email_' + address) || '[ZKP Hashed]',
+          email: sessionStorage.getItem('voter_email_' + address) || '',
           status: info.status,
           role: 'Voter',
           registeredAt: new Date(parseInt(info.registeredAt) * 1000),

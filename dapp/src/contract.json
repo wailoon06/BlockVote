@@ -2448,10 +2448,10 @@
     "80002": {
       "links": {},
       "events": {},
-      "address": "0xcd50d389e2849d9a19ff595bbe9fe86372206b43"
+      "address": "0x6cffa6bffff06b35027bdd308348bec8fd6aa918"
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2026-03-26T08:50:55.158Z",
+  "updatedAt": "2026-03-31T13:31:36.967Z",
   "networkType": "ethereum"
 }

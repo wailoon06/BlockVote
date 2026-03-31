@@ -3,10 +3,10 @@
   "chainId": 80002,
   "deployer": "0x7fd0de9f11134fc11b47d04408c307c417d5e7f7",
   "mainContract": {
-    "address": "0xcd50d389e2849d9a19ff595bbe9fe86372206b43"
+    "address": "0x6cffa6bffff06b35027bdd308348bec8fd6aa918"
   },
   "verifier": {
-    "address": "0x0e0153675074ca9e94a41f6d9eb48c23e5d6e0f5"
+    "address": "0xa38599261b83c3aef63a9bc99964a6b145bedb4d"
   },
-  "deployedAt": "2026-03-26T08:50:49.097Z"
+  "deployedAt": "2026-03-31T13:31:33.647Z"
 }

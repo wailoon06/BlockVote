@@ -42,10 +42,10 @@
     "80002": {
       "links": {},
       "events": {},
-      "address": "0x0e0153675074ca9e94a41f6d9eb48c23e5d6e0f5"
+      "address": "0xa38599261b83c3aef63a9bc99964a6b145bedb4d"
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2026-03-26T08:50:55.158Z",
+  "updatedAt": "2026-03-31T13:31:36.967Z",
   "networkType": "ethereum"
 }

@@ -51,7 +51,7 @@ function Require-EnvVar {
     }
 }
 
-Write-Host "`n[1/7] Validating environment..." -ForegroundColor Yellow
+Write-Host "`nValidating environment..." -ForegroundColor Yellow
 Import-DotEnv $envFile
 Require-EnvVar "TRUSTEE_1"
 Require-EnvVar "TRUSTEE_2"
@@ -64,19 +64,19 @@ if ($Network -eq "amoy") {
 Set-Location $contractRoot
 $env:DEPLOY_NETWORK = $Network
 
-Write-Host "`n[2/7] Installing dependencies..." -ForegroundColor Yellow
-cmd /c npm install
-if ($LASTEXITCODE -ne 0) {
-    throw "npm install failed"
-}
+# Write-Host "`n[2/7] Installing dependencies..." -ForegroundColor Yellow
+# cmd /c npm install
+# if ($LASTEXITCODE -ne 0) {
+#     throw "npm install failed"
+# }
 
-Write-Host "`n[3/7] Compiling contracts (Hardhat)..." -ForegroundColor Yellow
+Write-Host "`nCompiling contracts (Hardhat)..." -ForegroundColor Yellow
 cmd /c npm run compile
 if ($LASTEXITCODE -ne 0) {
     throw "Compile failed"
 }
 
-Write-Host "`n[4/7] Deploying contracts via Hardhat ($Network)..." -ForegroundColor Yellow
+Write-Host "`nDeploying contracts via Hardhat ($Network)..." -ForegroundColor Yellow
 if ($Network -eq "amoy") {
     npm run deploy:amoy
 } else {
@@ -86,7 +86,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Deployment failed"
 }
 
-Write-Host "`n[5/7] Exporting frontend artifacts..." -ForegroundColor Yellow
+Write-Host "`Exporting frontend artifacts..." -ForegroundColor Yellow
 if ($Network -eq "amoy") {
     npm run export:frontend:amoy
 } else {
@@ -104,19 +104,19 @@ $contractAddress = $deployment.mainContract.address
 $verifierAddress = $deployment.verifier.address
 $chainId = [string]$deployment.chainId
 
-Write-Host "`n[6/7] Updating verifier address in zkp config..." -ForegroundColor Yellow
+Write-Host "`nUpdating verifier address in zkp config..." -ForegroundColor Yellow
 $configContent = Get-Content $zkpConfigPath -Raw
 $configContent = $configContent -replace "address:\s*'0x[a-fA-F0-9]{40}'", "address: '$verifierAddress'"
 Set-Content -Path $zkpConfigPath -Value $configContent
 
 if (-not $SkipPhase1.IsPresent) {
-    Write-Host "`n[7/7] Running Phase 1 setup..." -ForegroundColor Yellow
+    Write-Host "`nRunning Phase 1 setup..." -ForegroundColor Yellow
     npm run phase1
     if ($LASTEXITCODE -ne 0) {
         throw "Phase 1 setup failed"
     }
 } else {
-    Write-Host "`n[7/7] Skipping Phase 1 setup (requested)." -ForegroundColor DarkYellow
+    Write-Host "`nSkipping Phase 1 setup (requested)." -ForegroundColor DarkYellow
 }
 
 Write-Host "`n========================================" -ForegroundColor Cyan

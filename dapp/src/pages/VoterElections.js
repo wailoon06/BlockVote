@@ -5,6 +5,7 @@ import { encryptVote, getPublicKey, getCandidateIndex, computeVoteBlock } from '
 import { generateVoteProof } from '../utils/zkpProofGenerator';
 import { getVoterSecret, computeNullifier, toBytes32, generateDeterministicVoterSecret, storeVoterSecret } from '../utils/poseidonUtils';
 import IPFSClient from '../utils/ipfsClient';
+import { verifyICMatch } from '../utils/icHashUtils';
 import MessageAlert from '../components/MessageAlert';
 import Navbar from '../components/Navbar';
 import Sidebar from '../components/Sidebar';
@@ -207,6 +208,20 @@ export default function VoterElections() {
     try {
       const { deployedContract, web3 } = await getDeployedContract();
 
+      // ── Step 0: Validate IC matches the registered IC ───────────────
+      setMessage('Verifying Identity...');
+      setMessageType('info');
+
+      const voterData = await deployedContract.methods.voters(walletAddress).call();
+      if (!voterData.isRegistered) {
+        throw new Error('Wallet not registered as a voter.');
+      }
+      
+      if (!verifyICMatch(ic, voterData.icHash)) {
+        throw new Error('IC Number mismatch! You must use the exact IC you registered with.');
+      }
+      // ────────────────────────────────────────────────────────────────
+
       // ── Step 1: Encrypt ballot ───────────────────────────────────────
       setMessage('Preparing vote...');
       setMessageType('info');
@@ -366,7 +381,7 @@ export default function VoterElections() {
           }}>
             <h3 style={{ margin: '0 0 0.5rem', color: '#1e293b' }}>🔐 Confirm Your Identity</h3>
             <p style={{ margin: '0 0 1.5rem', color: '#64748b', fontSize: '0.9rem' }}>
-              Enter your IC number to generate a zero-knowledge proof. Your IC is never sent to the blockchain.
+              Enter your IC number to verify you are legitimate wallet owner. Your IC is never sent to the blockchain.
             </p>
             <input
               type="text"

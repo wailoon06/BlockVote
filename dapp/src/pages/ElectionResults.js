@@ -479,11 +479,12 @@ export default function ElectionResults() {
                   gap: '12px'
                 }}>
                   <span style={{ fontSize: '28px' }}>🏆</span>
-                  Candidate Results
+                  Final Results
                 </h2>
 
                 {/* Phase 4 Result Banner */}
-                {phase4Result && (
+                {phase4Result 
+                && (
                   <div style={{
                     padding: '20px 24px',
                     background: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)',
@@ -494,8 +495,9 @@ export default function ElectionResults() {
                     alignItems: 'center',
                     gap: '16px',
                     flexWrap: 'wrap'
-                  }}>
-                    <span style={{ fontSize: '28px' }}>🔓</span>
+                  }
+                  }>
+                    {/* <span style={{ fontSize: '28px' }}>🔓</span>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: '15px', fontWeight: '700', color: '#3730a3', marginBottom: '4px' }}>
                         Results Published via Threshold Decryption
@@ -504,7 +506,7 @@ export default function ElectionResults() {
                         Shares used: {phase4Result.shares_used?.length ?? '—'}
                         &nbsp;·&nbsp;Published: {phase4Result.published_at ? new Date(phase4Result.published_at).toLocaleString() : '—'}
                       </div>
-                    </div>
+                    </div> */}
                   </div>
                 )}
 

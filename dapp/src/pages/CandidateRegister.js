@@ -417,19 +417,6 @@ export default function CandidateRegister() {
             >
               {loading ? 'Registering...' : !walletAddress ? 'Connect Wallet First' : 'Submit Candidate Registration'}
             </button>
-
-            <div style={{
-              marginTop: '1.5rem',
-              padding: '1rem',
-              backgroundColor: '#e8f4f8',
-              borderRadius: '0.5rem',
-              border: '1px solid #2c5282',
-              fontSize: '0.875rem',
-              color: '#495057',
-              lineHeight: '1.6'
-            }}>
-              ℹ️ After registration, you'll need to complete identity verification to become an eligible candidate.
-            </div>
           </form>
         </div>
       </div>

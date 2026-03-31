@@ -80,10 +80,10 @@ const SECRET_KEY = (address) => `voterSecret_enc_${address.toLowerCase()}`;
 
 // The message signed by MetaMask. Fixed and deterministic per address.
 const SIGN_MESSAGE = (address) =>
-  `BlockVote voter secret encryption key\nAddress: ${address.toLowerCase()}\n\nSigning this message encrypts your voter secret. It does not cost gas or submit a transaction.`;
+  `BlockVote voter secret encryption key\nAddress: ${address.toLowerCase()}\n\nSign to unlock your encrypted local voting identity. It does not cost gas or submit a transaction.`;
 
 const DETERMINISTIC_SECRET_MESSAGE = (address) =>
-  `BlockVote identity derivation\nAddress: ${address.toLowerCase()}\n\nSigning this message derives your permanent zero-knowledge identity. Keep this wallet secure.`;
+  `BlockVote identity derivation\nAddress: ${address.toLowerCase()}\n\nSign to derive your permanent zero-knowledge identity. Keep this wallet secure.`;
 
 /**
  * Derive an AES-256-GCM CryptoKey from a MetaMask personal_sign signature.
