@@ -506,7 +506,7 @@ export default function OrganizerManageElection() {
         .publishResults(electionId, resultPayload, pdInputHash)
         .send({ from: walletAddress, maxPriorityFeePerGas: web3.utils.toWei('30', 'gwei'),gas: 3000000 });
 
-      setMessage('✅ Results published successfully!');
+      setMessage('Results published successfully!');
       setMessageType('success');
       await loadPhase4Status(deployedContract);
     } catch (err) {
